@@ -1,6 +1,6 @@
 from pathlib import Path
 
-COMP_NAME = ""
+COMP_NAME = "icecube-neutrinos-in-deep-ice"
 STORAGE = "storage_dimm2"
 # STORAGE = "storage"
 
