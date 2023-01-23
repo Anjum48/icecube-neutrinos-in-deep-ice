@@ -3,14 +3,35 @@ import sys
 COMP_NAME = "icecube-neutrinos-in-deep-ice"
 sys.path.append(f"/home/anjum/kaggle/{COMP_NAME}/")
 
-import mlcrate as mlc
+import contextlib
+
+import joblib
 import numpy as np
 import pandas as pd
 import torch
+from joblib import Parallel, delayed
 from torch_geometric.data import Data
 from tqdm import tqdm
 
 from src.config import INPUT_PATH
+
+
+@contextlib.contextmanager
+def tqdm_joblib(tqdm_object):
+    """Context manager to patch joblib to report into tqdm progress bar given as argument"""
+
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_batch_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_batch_callback
+        tqdm_object.close()
 
 
 def prepare_sensors():
@@ -39,9 +60,8 @@ def prepare_sensors():
     return sensors
 
 
-def process_event(event, batch, event_id, targets):
+def process_event(event, batch, event_id, target):
     event = pd.merge(event, sensors, on="sensor_id")
-    target = list(targets[event_id].values())
 
     x = event[["x", "y", "z", "time", "charge", "qe", "auxiliary"]].values
     x = torch.tensor(x, dtype=torch.float32)
@@ -68,7 +88,8 @@ def process_file(file_path):
     )
 
     for event_id in df.index.unique():
-        process_event(df.loc[event_id], batch, event_id, targets)
+        target = list(targets[event_id].values())
+        process_event(df.loc[event_id], batch, event_id, target)
 
 
 if __name__ == "__main__":
@@ -89,7 +110,7 @@ if __name__ == "__main__":
 
     file_paths = [INPUT_PATH / "train" / f"batch_{i+1}.parquet" for i in range(660)]
 
-    pool = mlc.SuperPool(8)
-    pool.map(process_file, file_paths)
+    with tqdm_joblib(tqdm(desc="Preprocessing", total=len(file_paths))) as progress_bar:
+        Parallel(n_jobs=16)(delayed(process_file)(f) for f in file_paths)
 
     # process_file(file_paths[0])
