@@ -35,7 +35,7 @@ def tqdm_joblib(tqdm_object):
 
 
 def prepare_sensors():
-    sensors = pd.read_csv(INPUT_PATH / "sensor_geometry_v2.csv", index_col="sensor_id")
+    sensors = pd.read_csv(INPUT_PATH / "sensor_geometry.csv", index_col="sensor_id")
     sensors["string"] = 0
     sensors["qe"] = 1
 
@@ -51,11 +51,11 @@ def prepare_sensors():
 
     # https://github.com/graphnet-team/graphnet/blob/b2bad25528652587ab0cdb7cf2335ee254cfa2db/src/graphnet/models/detector/icecube.py#L33-L41
     # Assume that "rde" (relative dom efficiency) is equivalent to QE
-    sensors["qe"] /= 0.25
     sensors["x"] /= 500
     sensors["y"] /= 500
     sensors["z"] /= 500
     sensors["qe"] -= 1.25
+    sensors["qe"] /= 0.25
 
     return sensors
 
