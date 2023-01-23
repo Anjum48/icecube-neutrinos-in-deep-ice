@@ -60,6 +60,14 @@ def prepare_sensors():
     return sensors
 
 
+def make_meta_parts():
+    (INPUT_PATH / "train_meta_parts").mkdir(exist_ok=True)
+    meta = pd.read_parquet(INPUT_PATH / "train_meta.parquet")
+    for i in tqdm(range(660)):
+        part = meta[meta["batch_id"] == (i + 1)]
+        part.to_parquet(INPUT_PATH / "train_meta_parts" / f"batch_{i+1}.parquet")
+
+
 def process_event(event, batch, event_id, target):
     event = pd.merge(event, sensors, on="sensor_id")
 
@@ -70,9 +78,8 @@ def process_event(event, batch, event_id, target):
     torch.save(data, INPUT_PATH / "train_events" / batch / f"event_{event_id}.pt")
 
 
-def process_file(file_path):
-    batch = file_path.stem
-    batch_id = int(batch.split("_")[1])
+def process_file(batch_id):
+    batch = f"batch_{batch_id}"
 
     (INPUT_PATH / "train_events" / batch).mkdir(exist_ok=True)
     df = pd.read_parquet(INPUT_PATH / "train" / f"{batch}.parquet")
@@ -82,7 +89,7 @@ def process_file(file_path):
     df["auxiliary"] = df["auxiliary"].astype(int) - 0.5
 
     targets = (
-        meta.query(f"batch_id == {batch_id}")
+        pd.read_parquet(INPUT_PATH / "train_meta_parts" / f"{batch}.parquet")
         .set_index("event_id", drop=True)[["azimuth", "zenith"]]
         .to_dict(orient="index")
     )
@@ -93,24 +100,10 @@ def process_file(file_path):
 
 
 if __name__ == "__main__":
-    _dtype = {
-        "batch_id": "int16",
-        "event_id": "int64",
-        # "first_pulse_index": "int32",
-        # "last_pulse_index": "int32",
-        "azimuth": "float32",
-        "zenith": "float32",
-    }
-
     sensors = prepare_sensors()
-    meta = pd.read_parquet(
-        INPUT_PATH / "train_meta.parquet",
-        columns=["batch_id", "event_id", "azimuth", "zenith"],
-    ).astype(_dtype)
+    batch_ids = [i + 1 for i in range(660)]
 
-    file_paths = [INPUT_PATH / "train" / f"batch_{i+1}.parquet" for i in range(660)]
+    with tqdm_joblib(tqdm(desc="Preprocessing", total=len(batch_ids))) as progress_bar:
+        Parallel(n_jobs=32)(delayed(process_file)(b) for b in batch_ids)
 
-    with tqdm_joblib(tqdm(desc="Preprocessing", total=len(file_paths))) as progress_bar:
-        Parallel(n_jobs=16)(delayed(process_file)(f) for f in file_paths)
-
-    # process_file(file_paths[0])
+    # process_file(batch_ids[0])
