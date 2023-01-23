@@ -1,4 +1,5 @@
 defaults:
+  - _self_
   - model: baseline
   - trainer: default
 
@@ -15,7 +16,7 @@ storage_drive: storage_dimm2
 
 hydra:
   run:
-    dir: /mnt/${storage_drive}/kaggle_output/${comp_name}/${run.timestamp}/${model.encoder}/fold_${run.fold}/
+    dir: /mnt/${storage_drive}/kaggle_output/${comp_name}/${run.timestamp}/${model.model_name}/fold_${run.fold}/
 # sweep:
 #   dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
 #   subdir: ${hydra.job.num}

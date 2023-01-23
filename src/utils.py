@@ -8,10 +8,11 @@ import torch
 import yaml
 from coolname import generate_slug
 from pytorch_lightning.callbacks import (
+    Callback,
     EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
-    Callback,
+    RichProgressBar,
 )
 from pytorch_lightning.loggers import NeptuneLogger, TensorBoardLogger, WandbLogger
 
@@ -170,6 +171,7 @@ def prepare_loggers_and_callbacks(
     callbacks, loggers = {}, {}
 
     callbacks["lr"] = LearningRateMonitor(logging_interval="step")
+    callbacks["progress"] = RichProgressBar()
 
     if "/" in encoder_name:
         encoder_name = encoder_name.replace("/", "_")

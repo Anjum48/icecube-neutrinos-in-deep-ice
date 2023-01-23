@@ -9,8 +9,10 @@ from src.datasets import IceCubeDataModule
 from src.models import IceCubeModel
 from src.utils import LogSummaryCallback, prepare_loggers_and_callbacks, resume_helper
 
+torch.set_float32_matmul_precision("high")
 
-@hydra.main(config_path="conf", config_name="config")
+
+@hydra.main(config_path="conf", config_name="config", version_base=None)
 def run_fold(cfg: DictConfig):
     pl.seed_everything(cfg.run.seed + cfg.run.fold)
     resume, run_id = resume_helper(cfg)
@@ -29,18 +31,12 @@ def run_fold(cfg: DictConfig):
         save_weights_only=True,
     )
 
-    callbacks["metric_summary"] = LogSummaryCallback("f1", "max")
+    callbacks["metric_summary"] = LogSummaryCallback("loss/valid", "min")
 
     dm = IceCubeDataModule(**cfg.model)
     dm.setup("fit", cfg.run.fold)
 
-    # Adjust lr for grad accumulation
-    cfg.model.lr = cfg.model.lr * cfg.trainer.accumulate_grad_batches
-    n_steps = (
-        (cfg.trainer.max_epochs)  # - 1)
-        * dm.train_steps
-        / (cfg.trainer.accumulate_grad_batches * cfg.trainer.devices)
-    )
+    n_steps = (cfg.trainer.max_epochs) * dm.train_steps / cfg.trainer.devices
 
     # swa = StochasticWeightAveraging(swa_epoch_start=0.5, annealing_epochs=2)
     # callbacks["swa"] = swa
@@ -54,21 +50,8 @@ def run_fold(cfg: DictConfig):
         # plugins=DDPPlugin(find_unused_parameters=False),
         # fast_dev_run=True,
         # auto_lr_find=True,
-        # For longerformer/BigBird use the custom batch sampler
-        replace_sampler_ddp=False,
         **cfg.trainer,
     )
-
-    # Save Hugging Face configs for loading in Kaggle env
-    if trainer.is_global_zero:
-        save_path = (
-            OUTPUT_PATH
-            / cfg.run.timestamp
-            / cfg.model.model_name
-            / f"fold_{cfg.run.fold}"
-        )
-        dm.tokenizer.save_pretrained(save_path)
-        model.config.to_json_file(str(save_path / "config.json"))
 
     # trainer.tune(model, datamodule=dm)  # Use with auto_lr_find
     trainer.fit(model, datamodule=dm)

@@ -32,8 +32,7 @@ class IceCubeModel(pl.LightningModule):
         self.loss_fn = angular_dist_loss
 
     def forward(self, x):
-        x_trfm = self.pre_transform(x)
-        emb = self.model(x_trfm)
+        emb = self.model(x)
         y = self.head(emb)
 
         y[:, 0] = (1 + torch.tanh(y[:, 0])) * np.pi  # Azimuth can range from 0 to 2pi
@@ -42,7 +41,7 @@ class IceCubeModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         pred = self.forward(batch)
-        loss = self.loss_fn(pred, batch.y)
+        loss = self.loss_fn(pred, batch.y.reshape(-1, 2))
 
         self.log_dict({"loss/train_step": loss})
         return {"loss": loss}
@@ -53,7 +52,7 @@ class IceCubeModel(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         pred = self.forward(batch)
-        loss = self.loss_fn(pred, batch.y)
+        loss = self.loss_fn(pred, batch.y.reshape(-1, 2))
 
         output = {"val_loss": loss}
 

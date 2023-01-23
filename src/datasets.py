@@ -7,7 +7,7 @@ from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import Dataset
 from torch_geometric.loader import DataLoader
 
-from config import INPUT_PATH
+from src.config import INPUT_PATH
 
 
 def create_folds(data, n_splits=5, random_state=48):
@@ -98,3 +98,19 @@ class IceCubeDataModule(pl.LightningDataModule):
             batch_size=self.batch_size * 8,
             num_workers=self.num_workers,
         )
+
+
+# if __name__ == "__main__":
+#     import sys
+
+#     COMP_NAME = "icecube-neutrinos-in-deep-ice"
+#     sys.path.append(f"/home/anjum/kaggle/{COMP_NAME}/")
+
+#     meta = pd.read_parquet(INPUT_PATH / "train_meta.parquet").query("batch_id == 1")
+#     ds = IceCubeDataset(meta)
+#     dl = DataLoader(ds, batch_size=4)
+
+#     for d in dl:
+#         print(d)
+#         print(d.y.reshape(-1, 2))
+#         break
