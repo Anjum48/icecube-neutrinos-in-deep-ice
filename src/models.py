@@ -18,6 +18,7 @@ class IceCubeModel(pl.LightningModule):
         warmup: float = 0.1,
         T_max: int = 1000,
         nb_inputs: int = 7,
+        nearest_neighbours: int = 8,
         **kwargs,
     ):
         super().__init__()
@@ -25,6 +26,7 @@ class IceCubeModel(pl.LightningModule):
 
         self.model = DynEdge(
             nb_inputs=nb_inputs,
+            nb_neighbours=nearest_neighbours,
             global_pooling_schemes=["min", "max", "mean", "sum"],
         )
         self.head = nn.Linear(128, 2)
@@ -32,11 +34,10 @@ class IceCubeModel(pl.LightningModule):
         self.loss_fn = angular_dist_loss
 
     def forward(self, x):
-        emb = self.model(x)
-        y = self.head(emb)
+        y = self.head(self.model(x))
 
-        y[:, 0] = (1 + torch.tanh(y[:, 0])) * np.pi  # Azimuth can range from 0 to 2pi
-        y[:, 1] = torch.sigmoid(y[:, 1]) * np.pi  # Zenith can range from 0 to pi
+        y[:, 0] = np.pi * (1 + torch.tanh(y[:, 0]))  # Azimuth can range from 0 to 2pi
+        y[:, 1] = np.pi * torch.sigmoid(y[:, 1])  # Zenith can range from 0 to pi
         return y
 
     def training_step(self, batch, batch_idx):
@@ -78,7 +79,8 @@ class IceCubeModel(pl.LightningModule):
 
         sch = get_cosine_schedule_with_warmup(
             opt,
-            num_warmup_steps=int(0.1 * self.hparams.T_max),
+            # num_warmup_steps=int(0.1 * self.hparams.T_max),
+            num_warmup_steps=int(0.05 * self.hparams.T_max),
             num_training_steps=self.hparams.T_max,
             num_cycles=0.5,  # 1,
             last_epoch=-1,

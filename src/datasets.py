@@ -7,7 +7,7 @@ from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import Dataset
 from torch_geometric.loader import DataLoader
 
-from src.config import INPUT_PATH
+from src.config import INPUT_PATH, INPUT_PATH_ALT
 
 
 def create_folds(data, n_splits=5, random_state=48):
@@ -31,15 +31,32 @@ class IceCubeDataset(Dataset):
     def len(self):
         return len(self.df)
 
+    def find_archive(self, batch_id):
+        for i in range(7):
+            start, end = i * 100 + 1, i * 100 + 100
+            if batch_id in range(start, end):
+                return f"archive_{start}-{end}"
+
     def get(self, idx):
         row = self.df.loc[idx]
 
-        file_path = (
-            INPUT_PATH
-            / "train_events"
-            / f"batch_{int(row['batch_id'])}"
-            / f"event_{int(row['event_id'])}.pt"
-        )
+        # Batches 501-600 are on /mnt/storage due to the inode limitation
+        # on /mnt/storage_dimm2
+        if int(row["batch_id"]) in range(501, 601):
+            file_path = (
+                INPUT_PATH_ALT
+                / "train_events"
+                / f"batch_{int(row['batch_id'])}"
+                / f"event_{int(row['event_id'])}.pt"
+            )
+        # The rest are on /mnt/storage_dimm2
+        else:
+            file_path = (
+                INPUT_PATH
+                / "train_events"
+                / f"batch_{int(row['batch_id'])}"
+                / f"event_{int(row['event_id'])}.pt"
+            )
 
         data = torch.load(file_path)
         return data
@@ -81,6 +98,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.clr_train,
             num_workers=self.num_workers,
             batch_size=self.batch_size,
+            shuffle=True,
             pin_memory=True,
         )
 

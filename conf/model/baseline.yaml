@@ -1,5 +1,5 @@
 model_name: DynEdge
 batch_size: 16
-learning_rate: 0.001
+learning_rate: 0.01
 nearest_neighbours: 8
-
+nearest_radius: 160
