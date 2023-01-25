@@ -1,10 +1,9 @@
 import hydra
 import pytorch_lightning as pl
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from pytorch_lightning.callbacks import StochasticWeightAveraging
 
-from src.config import MODEL_CACHE, OUTPUT_PATH
 from src.datasets import IceCubeDataModule
 from src.models import IceCubeModel
 from src.utils import LogSummaryCallback, prepare_loggers_and_callbacks, resume_helper
@@ -50,6 +49,7 @@ def run_fold(cfg: DictConfig):
         # plugins=DDPPlugin(find_unused_parameters=False),
         # fast_dev_run=True,
         # auto_lr_find=True,
+        # overfit_batches=10,
         **cfg.trainer,
     )
 

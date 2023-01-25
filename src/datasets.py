@@ -24,9 +24,12 @@ def create_folds(data, n_splits=5, random_state=48):
 
 
 class IceCubeDataset(Dataset):
-    def __init__(self, df, transform=None, pre_transform=None, pre_filter=None):
+    def __init__(
+        self, df, pulse_limit=300, transform=None, pre_transform=None, pre_filter=None
+    ):
         super().__init__(transform, pre_transform, pre_filter)
         self.df = df.reset_index(drop=True)  # DataFrame containing batch_id & event_id
+        self.pulse_limit = pulse_limit
 
     def len(self):
         return len(self.df)
@@ -59,6 +62,17 @@ class IceCubeDataset(Dataset):
             )
 
         data = torch.load(file_path)
+
+        # Only use aux = False
+        mask = data.x[:, -1] < 0
+        data.x = data.x[mask]
+        data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
+
+        # Downsample the large events
+        if data.n_pulses > self.pulse_limit:
+            data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
+            data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
+
         return data
 
 

@@ -1,8 +1,9 @@
 import numpy as np
 import torch
+import torch.nn as nn
 
 
-def angular_dist_score(az_true, zen_true, az_pred, zen_pred):
+def angular_dist_score_numpy(az_true, zen_true, az_pred, zen_pred):
     """
     calculate the MAE of the angular distance between two directions.
     The two vectors are first converted to cartesian unit vectors,
@@ -59,7 +60,7 @@ def angular_dist_score(az_true, zen_true, az_pred, zen_pred):
     return np.average(np.abs(np.arccos(scalar_prod)))
 
 
-def angular_dist_loss(y_pred, y_true):
+def angular_dist_score(y_pred, y_true):
     """
     calculate the MAE of the angular distance between two directions.
     The two vectors are first converted to cartesian unit vectors,
@@ -112,6 +113,23 @@ def angular_dist_loss(y_pred, y_true):
     return torch.mean(torch.abs(torch.arccos(scalar_prod)))
 
 
+# https://stats.stackexchange.com/questions/218407/encoding-angle-data-for-neural-network
+def sincos_encoded_loss(y_pred, y_true):
+    zen_pred = np.pi * torch.sigmoid(y_pred[:, 2])
+    az_pred_encoded = torch.tanh(y_pred[:, :2])
+    az_true_encoded = torch.stack(
+        [torch.sin(y_true[:, 0]), torch.cos(y_true[:, 0])],
+        dim=1,
+    )
+
+    azimuth_loss = nn.functional.l1_loss(az_pred_encoded, az_true_encoded)
+    zenith_loss = nn.functional.l1_loss(
+        zen_pred.reshape(-1, 1), y_true[:, -1].reshape(-1, 1)
+    )
+
+    return azimuth_loss + zenith_loss
+
+
 # y_pred = np.random.normal(size=(5, 2))
 # y_true = np.random.normal(size=(5, 2))
 
@@ -122,4 +140,11 @@ def angular_dist_loss(y_pred, y_true):
 # y_true_t = torch.tensor(y_true, dtype=torch.float32)
 
 # score_torch = angular_dist_loss(y_pred_t, y_true_t)
+# print(score_torch)
+
+
+# y_pred = torch.normal(torch.zeros((5, 3)), torch.ones((5, 3)))
+# y_true = torch.normal(torch.zeros((5, 2)), torch.ones((5, 2)))
+
+# score_torch = sincos_encoded_loss(y_pred, y_true)
 # print(score_torch)

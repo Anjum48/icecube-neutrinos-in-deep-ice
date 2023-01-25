@@ -182,11 +182,11 @@ def prepare_loggers_and_callbacks(
     for monitor, mode, suffix in monitors:
 
         if suffix is not None and suffix != "":
-            filename = "{epoch:02d}-{f2:.4f}" + f"_{suffix}"
+            filename = "{epoch:02d}-{loss/valid:.4f}" + f"_{suffix}"
         elif len(monitors) == 1:
             filename = "{epoch:02d}"
         else:
-            filename = "{epoch:02d}-{f2:.4f}"
+            filename = "{epoch:02d}-{loss/valid:.4f}"
 
         checkpoint = ModelCheckpoint(
             dirpath=save_path / encoder_name / f"fold_{fold}",
