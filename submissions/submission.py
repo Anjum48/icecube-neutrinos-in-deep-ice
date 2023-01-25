@@ -421,6 +421,9 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
     batch_ids = meta["batch_id"].unique()
     output = 0
 
+    if mode == "train":
+        batch_ids = batch_ids[:6]
+
     # for i, group in enumerate(mpaths):
     #     for j, p in enumerate(group):
 
@@ -436,9 +439,6 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
         )
         batch_preds.append(infer(model, dataset, device=device, batch_size=1024))
         print("Finished batch", b)
-
-        if mode == "train" and b == 6:
-            break
 
     output += torch.cat(batch_preds, 0)
 
