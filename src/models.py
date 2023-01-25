@@ -3,11 +3,11 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from graphnet.models.gnn import DynEdge
-from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from graphnet.models.task.reconstruction import (
     AzimuthReconstructionWithKappa,
     ZenithReconstruction,
 )
+from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from transformers import get_cosine_schedule_with_warmup
 
 from src.losses import angular_dist_score
@@ -85,17 +85,29 @@ class IceCubeModel(pl.LightningModule):
         pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
         metric = angular_dist_score(pred_angles, target)
 
-        output = {"val_loss": loss, "metric": metric}
+        output = {
+            "val_loss": loss,
+            "metric": metric,
+            "val_loss_azi": loss_azi,
+            "val_loss_zen": loss_zen,
+        }
 
         return output
 
     def validation_epoch_end(self, outputs):
         loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
+        loss_val_azi = torch.stack([x["val_loss_azi"] for x in outputs]).mean()
+        loss_val_zen = torch.stack([x["val_loss_zen"] for x in outputs]).mean()
         metric = torch.stack([x["metric"] for x in outputs]).mean()
 
         self.log_dict(
             {"loss/valid": loss_val, "metric": metric},
             prog_bar=True,
+            sync_dist=True,
+        )
+        self.log_dict(
+            {"loss/valid_azi": loss_val_azi, "loss/valid_zen": loss_val_zen},
+            prog_bar=False,
             sync_dist=True,
         )
 

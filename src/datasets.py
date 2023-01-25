@@ -4,7 +4,7 @@ import pytorch_lightning as pl
 import torch
 from graphnet.models.graph_builders import KNNGraphBuilder
 from sklearn.model_selection import StratifiedKFold
-from torch_geometric.data import Dataset
+from torch_geometric.data import Dataset, Data
 from torch_geometric.loader import DataLoader
 
 from src.config import INPUT_PATH, INPUT_PATH_ALT
@@ -34,12 +34,6 @@ class IceCubeDataset(Dataset):
     def len(self):
         return len(self.df)
 
-    def find_archive(self, batch_id):
-        for i in range(7):
-            start, end = i * 100 + 1, i * 100 + 100
-            if batch_id in range(start, end):
-                return f"archive_{start}-{end}"
-
     def get(self, idx):
         row = self.df.loc[idx]
 
@@ -62,6 +56,54 @@ class IceCubeDataset(Dataset):
             )
 
         data = torch.load(file_path)
+
+        # Only use aux = False
+        mask = data.x[:, -1] < 0
+        data.x = data.x[mask]
+        data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
+
+        # Downsample the large events
+        if data.n_pulses > self.pulse_limit:
+            data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
+            data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
+
+        return data
+
+
+class IceCubeSubmissionDataset(Dataset):
+    def __init__(
+        self,
+        batch_id,
+        event_ids,
+        sensor_df,
+        mode="test",
+        pulse_limit=300,
+        transform=None,
+        pre_transform=None,
+        pre_filter=None,
+    ):
+        super().__init__(transform, pre_transform, pre_filter)
+        self.event_ids = event_ids
+        self.batch_df = pd.read_parquet(INPUT_PATH / mode / f"batch_{batch_id}.parquet")
+        self.sensor_df = sensor_df
+        self.pulse_limit = pulse_limit
+
+        self.batch_df["time"] = (self.batch_df["time"] - 1.0e04) / 3.0e4
+        self.batch_df["charge"] = np.log10(self.batch_df["charge"]) / 3.0
+        self.batch_df["auxiliary"] = self.batch_df["auxiliary"].astype(int) - 0.5
+
+    def len(self):
+        return len(self.event_ids)
+
+    def get(self, idx):
+        event_id = self.event_ids[idx]
+        event = self.batch_df.loc[event_id]
+
+        event = pd.merge(event, self.sensor_df, on="sensor_id")
+
+        x = event[["x", "y", "z", "time", "charge", "qe", "auxiliary"]].values
+        x = torch.tensor(x, dtype=torch.float32)
+        data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
 
         # Only use aux = False
         mask = data.x[:, -1] < 0

@@ -13,10 +13,10 @@ torch.set_float32_matmul_precision("high")
 
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def run_fold(cfg: DictConfig):
-    pl.seed_everything(cfg.run.seed + cfg.run.fold)
+    pl.seed_everything(cfg.run.seed + cfg.run.fold, workers=True)
     resume, run_id = resume_helper(cfg)
 
-    monitor_list = [("loss/valid", "min", "loss")]
+    monitor_list = [("loss/valid", "min", "loss"), ("metric", "min", "metric")]
 
     loggers, callbacks = prepare_loggers_and_callbacks(
         cfg.run.timestamp,
@@ -36,6 +36,7 @@ def run_fold(cfg: DictConfig):
     dm.setup("fit", cfg.run.fold)
 
     n_steps = (cfg.trainer.max_epochs) * dm.train_steps / cfg.trainer.devices
+    n_steps *= cfg.trainer.get("limit_train_batches", 1.0)
 
     # swa = StochasticWeightAveraging(swa_epoch_start=0.5, annealing_epochs=2)
     # callbacks["swa"] = swa
