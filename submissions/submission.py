@@ -19,20 +19,28 @@ if not KERNEL:
     OUTPUT_PATH = Path(f"/mnt/storage_dimm2/kaggle_output/{COMP_NAME}")
     MODEL_CACHE = Path("/mnt/storage/model_cache/torch")
 else:
-    INPUT_PATH = Path(f"../input/{COMP_NAME}")
+    INPUT_PATH = Path(f"/kaggle/input/{COMP_NAME}")
     MODEL_CACHE = None
 
     # Install packages
     import subprocess
 
-    # whls = [
-    #     "../input/transformers461/huggingface_hub-0.0.10-py3-none-any.whl",
-    #     "../input/transformers461/transformers-4.6.1-py3-none-any.whl",
-    # ]
+    whls = [
+        "/kaggle/input/pytorchgeometric/torch_cluster-1.6.0-cp37-cp37m-linux_x86_64.whl",
+        "/kaggle/input/pytorchgeometric/torch_scatter-2.1.0-cp37-cp37m-linux_x86_64.whl",
+        "/kaggle/input/pytorchgeometric/torch_sparse-0.6.16-cp37-cp37m-linux_x86_64.whl",
+        "/kaggle/input/pytorchgeometric/torch_spline_conv-1.2.1-cp37-cp37m-linux_x86_64.whl",
+        "/kaggle/input/pytorchgeometric/torch_geometric-2.2.0-py3-none-any.whl",
+        "/kaggle/input/pytorchgeometric/ruamel.yaml-0.17.21-py3-none-any.whl",
+    ]
 
-    # for w in whls:
-    #     print("Installing", w)
-    #     subprocess.call(["pip", "install", w, "--no-deps", "--upgrade"])
+    for w in whls:
+        print("Installing", w)
+        subprocess.call(["pip", "install", w, "--no-deps", "--upgrade"])
+
+    import sys
+
+    sys.path.append("/kaggle/input/graphnet/graphnet-main/src")
 
 from graphnet.models.gnn import DynEdge
 from graphnet.models.graph_builders import KNNGraphBuilder
@@ -45,6 +53,11 @@ from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 
 # import polars as pls
+
+_dtype = {
+    "batch_id": "int16",
+    "event_id": "int64",
+}
 
 
 # models.py
@@ -377,7 +390,7 @@ def prepare_sensors():
 def infer(model, dataset, batch_size=32, device="cuda"):
     model.to(device)
     model.eval()
-    loader = DataLoader(dataset, batch_size=batch_size, num_workers=4)
+    loader = DataLoader(dataset, batch_size=batch_size, num_workers=2)
 
     predictions = []
     with torch.no_grad():
@@ -402,7 +415,9 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
     # sensors["sensor_id"] = sensors["sensor_id"].astype(np.int16)
     # sensors = pls.from_pandas(sensors)
 
-    meta = pd.read_parquet(INPUT_PATH / f"{mode}_meta.parquet")
+    meta = pd.read_parquet(
+        INPUT_PATH / f"{mode}_meta.parquet", columns=["batch_id", "event_id"]
+    ).astype(_dtype)
     batch_ids = meta["batch_id"].unique()
     output = 0
 
@@ -421,6 +436,9 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
         )
         batch_preds.append(infer(model, dataset, device=device, batch_size=1024))
         print("Finished batch", b)
+
+        if mode == "train" and b == 6:
+            break
 
     output += torch.cat(batch_preds, 0)
 
@@ -449,8 +467,8 @@ if __name__ == "__main__":
     ]
 
     if KERNEL:
-        dataset_paths = [Path(f"../input/{COMP_NAME}-{f}") for f in model_folders]
+        dataset_paths = [Path(f"../input/icecube-{f}") for f in model_folders]
     else:
         dataset_paths = [OUTPUT_PATH / f for f in model_folders]
 
-    predictions = make_predictions(dataset_paths, mode="train")
+    predictions = make_predictions(dataset_paths, mode="test")
