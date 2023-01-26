@@ -2,7 +2,6 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from graphnet.models.gnn import DynEdge
 from graphnet.models.task.reconstruction import (
     AzimuthReconstructionWithKappa,
     ZenithReconstruction,
@@ -11,6 +10,8 @@ from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from transformers import get_cosine_schedule_with_warmup
 
 from src.losses import angular_dist_score
+
+from src.modules import DynEdge
 from src.utils import add_weight_decay
 
 
@@ -62,6 +63,7 @@ class IceCubeModel(pl.LightningModule):
 
         target = batch.y.reshape(-1, 2)
 
+        # weight = 1 - np.exp(-self.global_step / (self.hparams.T_max))
         loss_azi = self.loss_fn_azi(pred_azi, target)
         loss_zen = self.loss_fn_zen(pred_zen, target[:, -1].unsqueeze(-1))
         loss = loss_azi + loss_zen
@@ -78,6 +80,7 @@ class IceCubeModel(pl.LightningModule):
 
         target = batch.y.reshape(-1, 2)
 
+        # weight = 1 - np.exp(-self.global_step / (self.hparams.T_max))
         loss_azi = self.loss_fn_azi(pred_azi, target)
         loss_zen = self.loss_fn_zen(pred_zen, target[:, -1].unsqueeze(-1))
         loss = loss_azi + loss_zen
