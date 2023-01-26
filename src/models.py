@@ -30,7 +30,7 @@ class IceCubeModel(pl.LightningModule):
         self.save_hyperparameters()
 
         self.loss_fn_azi = VonMisesFisher2DLoss()
-        self.loss_fn_zen = nn.MSELoss()
+        self.loss_fn_zen = nn.L1Loss()
 
         self.model = DynEdge(
             nb_inputs=nb_inputs,

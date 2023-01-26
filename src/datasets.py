@@ -59,9 +59,9 @@ class IceCubeDataset(Dataset):
         data = torch.load(file_path)
 
         # Only use aux = False
-        mask = data.x[:, -1] < 0
-        data.x = data.x[mask]
-        data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
+        # mask = data.x[:, -1] < 0
+        # data.x = data.x[mask]
+        # data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
 
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
