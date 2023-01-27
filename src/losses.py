@@ -66,7 +66,7 @@ def angular_dist_score(y_pred, y_true):
     The two vectors are first converted to cartesian unit vectors,
     and then their scalar product is computed, which is equal to
     the cosine of the angle between the two vectors. The inverse
-    cosine (arccos) thereof is then the angle between the two itorchut vectors
+    cosine (arccos) thereof is then the angle between the two input vectors
 
     # https://www.kaggle.com/code/sohier/mean-angular-error
 
@@ -130,6 +130,27 @@ def sincos_encoded_loss(y_pred, y_true):
     return azimuth_loss + zenith_loss
 
 
+class CosineLoss(nn.Module):
+    def __init__(self):
+        super(CosineLoss, self).__init__()
+        self.cos = nn.CosineSimilarity()
+
+    def forward(self, y_pred, y_true):
+        xp = torch.cos(y_pred[:, 0]) * torch.sin(y_pred[:, 1])
+        yp = torch.sin(y_pred[:, 0]) * torch.sin(y_pred[:, 1])
+        zp = torch.cos(y_pred[:, 1])
+
+        xt = torch.cos(y_true[:, 0]) * torch.sin(y_true[:, 1])
+        yt = torch.sin(y_true[:, 0]) * torch.sin(y_true[:, 1])
+        zt = torch.cos(y_true[:, 1])
+
+        y_pred_cart = torch.stack([xp, yp, zp], dim=1)
+        y_true_cart = torch.stack([xt, yt, zt], dim=1)
+
+        cos_sim = self.cos(y_pred_cart, y_true_cart).mean()
+        return 1 - cos_sim
+
+
 # y_pred = np.random.normal(size=(5, 2))
 # y_true = np.random.normal(size=(5, 2))
 
@@ -142,9 +163,14 @@ def sincos_encoded_loss(y_pred, y_true):
 # score_torch = angular_dist_loss(y_pred_t, y_true_t)
 # print(score_torch)
 
-
-# y_pred = torch.normal(torch.zeros((5, 3)), torch.ones((5, 3)))
-# y_true = torch.normal(torch.zeros((5, 2)), torch.ones((5, 2)))
+# shape = (5, 2)
+# mu, sigma = torch.zeros(shape), torch.ones(shape)
+# y_pred = torch.normal(mu, sigma)
+# y_true = torch.normal(mu, sigma)
 
 # score_torch = sincos_encoded_loss(y_pred, y_true)
 # print(score_torch)
+
+# cos = CosineLoss()
+# print(cos(y_pred, y_true))
+# print(cos(y_true, y_true))
