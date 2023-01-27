@@ -24,20 +24,19 @@ GLOBAL_POOLINGS = {
 
 # https://stackoverflow.com/questions/71464582/how-to-use-pytorchs-nn-multiheadattention
 class MHAttnLayer(nn.Module):
-    def __init__(self, embed_dim=64, num_heads=8, dropout=0.0):
+    def __init__(self, in_features, embed_dim=64, num_heads=2, dropout=0.0):
         super(MHAttnLayer, self).__init__()
-        self.q_trfm = nn.LazyLinear(embed_dim, bias=False)
-        self.k_trfm = nn.LazyLinear(embed_dim, bias=False)
-        self.v_trfm = nn.LazyLinear(embed_dim, bias=False)
-        # Not sure if batch_first is True or False
+        self.q_trfm = nn.Linear(in_features, embed_dim, bias=False)
+        self.k_trfm = nn.Linear(in_features, embed_dim, bias=False)
+        self.v_trfm = nn.Linear(in_features, embed_dim, bias=False)
         self.multihead_attn = nn.MultiheadAttention(
-            embed_dim, num_heads, dropout=dropout, batch_first=True
+            embed_dim, num_heads, dropout=dropout
         )
 
     def forward(self, x):
-        q = self.q_trfm(x).unsqueeze(0)
-        k = self.k_trfm(x).unsqueeze(0)
-        v = self.v_trfm(x).unsqueeze(0)
+        q = self.q_trfm(x)  # .unsqueeze(0)
+        k = self.k_trfm(x)  # .unsqueeze(0)
+        v = self.v_trfm(x)  # .unsqueeze(0)
         attn_output, attn_output_weights = self.multihead_attn(q, k, v)
         return attn_output_weights @ x
 
@@ -71,8 +70,6 @@ class DynEdgeConv(EdgeConv, LightningModule):
 
         # Base class constructor
         super().__init__(nn=nn, aggr=aggr, **kwargs)
-
-        in_features = nn[0].in_features // 2
 
         # Additional member variables
         self.nb_neighbors = nb_neighbors
