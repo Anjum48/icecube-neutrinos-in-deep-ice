@@ -9,7 +9,7 @@ from graphnet.models.task.reconstruction import (
 from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from transformers import get_cosine_schedule_with_warmup
 
-from src.losses import angular_dist_score
+from src.losses import angular_dist_score, CosineLoss
 
 from src.modules import DynEdge
 from src.utils import add_weight_decay
@@ -32,6 +32,7 @@ class IceCubeModel(pl.LightningModule):
 
         self.loss_fn_azi = VonMisesFisher2DLoss()
         self.loss_fn_zen = nn.L1Loss()
+        self.loss_fn_cos = CosineLoss()
 
         self.model = DynEdge(
             nb_inputs=nb_inputs,
@@ -68,6 +69,14 @@ class IceCubeModel(pl.LightningModule):
         loss_zen = self.loss_fn_zen(pred_zen, target[:, -1].unsqueeze(-1))
         loss = loss_azi + loss_zen
 
+        pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
+        # metric = angular_dist_score(pred_angles, target)
+
+        loss_cos = self.loss_fn_cos(pred_angles, target)
+
+        if self.current_epoch > 0:
+            loss += loss_cos
+
         self.log_dict({"loss/train_step": loss})
         return {"loss": loss}
 
@@ -88,11 +97,17 @@ class IceCubeModel(pl.LightningModule):
         pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
         metric = angular_dist_score(pred_angles, target)
 
+        loss_cos = self.loss_fn_cos(pred_angles, target)
+
+        if self.current_epoch > 0:
+            loss += loss_cos
+
         output = {
             "val_loss": loss,
             "metric": metric,
             "val_loss_azi": loss_azi,
             "val_loss_zen": loss_zen,
+            "val_loss_cos": loss_cos,
         }
 
         return output
@@ -101,6 +116,7 @@ class IceCubeModel(pl.LightningModule):
         loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
         loss_val_azi = torch.stack([x["val_loss_azi"] for x in outputs]).mean()
         loss_val_zen = torch.stack([x["val_loss_zen"] for x in outputs]).mean()
+        val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
         metric = torch.stack([x["metric"] for x in outputs]).mean()
 
         self.log_dict(
@@ -109,7 +125,11 @@ class IceCubeModel(pl.LightningModule):
             sync_dist=True,
         )
         self.log_dict(
-            {"loss/valid_azi": loss_val_azi, "loss/valid_zen": loss_val_zen},
+            {
+                "loss/valid_azi": loss_val_azi,
+                "loss/valid_zen": loss_val_zen,
+                "loss/valid_cos": val_loss_cos,
+            },
             prog_bar=False,
             sync_dist=True,
         )

@@ -1,6 +1,7 @@
 from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models.utils import calculate_xyzt_homophily
@@ -19,6 +20,26 @@ GLOBAL_POOLINGS = {
     "sum": scatter_sum,
     "mean": scatter_mean,
 }
+
+
+# https://stackoverflow.com/questions/71464582/how-to-use-pytorchs-nn-multiheadattention
+class MHAttnLayer(nn.Module):
+    def __init__(self, embed_dim=64, num_heads=8, dropout=0.0):
+        super(MHAttnLayer, self).__init__()
+        self.q_trfm = nn.LazyLinear(embed_dim, bias=False)
+        self.k_trfm = nn.LazyLinear(embed_dim, bias=False)
+        self.v_trfm = nn.LazyLinear(embed_dim, bias=False)
+        # Not sure if batch_first is True or False
+        self.multihead_attn = nn.MultiheadAttention(
+            embed_dim, num_heads, dropout=dropout, batch_first=True
+        )
+
+    def forward(self, x):
+        q = self.q_trfm(x).unsqueeze(0)
+        k = self.k_trfm(x).unsqueeze(0)
+        v = self.v_trfm(x).unsqueeze(0)
+        attn_output, attn_output_weights = self.multihead_attn(q, k, v)
+        return attn_output_weights @ x
 
 
 class DynEdgeConv(EdgeConv, LightningModule):
