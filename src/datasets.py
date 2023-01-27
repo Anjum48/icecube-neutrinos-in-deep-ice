@@ -29,32 +29,25 @@ class IceCubeDataset(Dataset):
         self, df, pulse_limit=300, transform=None, pre_transform=None, pre_filter=None
     ):
         super().__init__(transform, pre_transform, pre_filter)
-        self.df = df.reset_index(drop=True)  # DataFrame containing batch_id & event_id
+        self.df = df  # DataFrame containing batch_id & event_id
         self.pulse_limit = pulse_limit
 
     def len(self):
         return len(self.df)
 
     def get(self, idx):
-        row = self.df.loc[idx]
+        bid, eid = self.df[idx, ["batch_id", "event_id"]]
+        bid, eid = bid[0], eid[0]
 
         # Batches 501-600 are on /mnt/storage due to the inode limitation
         # on /mnt/storage_dimm2
-        if int(row["batch_id"]) in range(501, 601):
+        if bid in range(501, 601):
             file_path = (
-                INPUT_PATH_ALT
-                / "train_events"
-                / f"batch_{int(row['batch_id'])}"
-                / f"event_{int(row['event_id'])}.pt"
+                INPUT_PATH_ALT / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
             )
         # The rest are on /mnt/storage_dimm2
         else:
-            file_path = (
-                INPUT_PATH
-                / "train_events"
-                / f"batch_{int(row['batch_id'])}"
-                / f"event_{int(row['event_id'])}.pt"
-            )
+            file_path = INPUT_PATH / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
 
         data = torch.load(file_path)
 
@@ -161,11 +154,6 @@ class IceCubeSubmissionDatasetV2(Dataset):
         x = torch.tensor(x, dtype=torch.float32)
         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
 
-        # Only use aux = False
-        mask = data.x[:, -1] < 0
-        data.x = data.x[mask]
-        data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
-
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
             data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
@@ -190,13 +178,13 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.max_len = max_len
         self.num_workers = num_workers
-        self.df = pd.read_parquet(INPUT_PATH / "folds.parquet")
+        self.df = pls.read_parquet(INPUT_PATH / "folds.parquet")
         self.train_steps = 0
         self.pre_transform = KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours)
 
     def setup(self, stage=None, fold_n: int = 0):
-        trn_df = self.df.query(f"fold != {fold_n}")
-        val_df = self.df.query(f"fold == {fold_n}")
+        trn_df = self.df.filter(pls.col("fold") != fold_n)
+        val_df = self.df.filter(pls.col("fold") == fold_n)
 
         if stage == "fit" or stage is None:
             self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
@@ -236,7 +224,7 @@ class IceCubeDataModule(pl.LightningDataModule):
 #     COMP_NAME = "icecube-neutrinos-in-deep-ice"
 #     sys.path.append(f"/home/anjum/kaggle/{COMP_NAME}/")
 
-#     meta = pd.read_parquet(INPUT_PATH / "train_meta.parquet").query("batch_id == 1")
+#     meta = pls.read_parquet(INPUT_PATH / "train_meta.parquet")
 #     ds = IceCubeDataset(meta)
 #     dl = DataLoader(ds, batch_size=4)
 
