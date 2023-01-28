@@ -37,8 +37,8 @@ def ice_transparency(data_path, datum=1950):
     )
 
     # These are both roughly equivalent after scaling
-    f_scattering = interp1d(df["z_norm"], df["scattering_len"])
-    f_absorption = interp1d(df["z_norm"], df["absorption_len"])
+    f_scattering = interp1d(df["z_norm"], df["scattering_len_norm"])
+    f_absorption = interp1d(df["z_norm"], df["absorption_len_norm"])
     return f_scattering, f_absorption
 
 
