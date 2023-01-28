@@ -4,7 +4,9 @@ import polars as pls
 import pytorch_lightning as pl
 import torch
 from graphnet.models.graph_builders import KNNGraphBuilder
+from scipy.interpolate import interp1d
 from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 
@@ -24,6 +26,22 @@ def create_folds(data, n_splits=5, random_state=48):
     return data
 
 
+def ice_transparency(data_path, datum=1950):
+    # Data from page 31 of https://arxiv.org/pdf/1301.5361.pdf
+    # Datum is from footnote 8 of page 29
+    df = pd.read_csv(data_path, delim_whitespace=True)
+    df["z"] = df["depth"] - datum
+    df["z_norm"] = df["z"] / 500
+    df[["scattering_len_norm", "absorption_len_norm"]] = RobustScaler().fit_transform(
+        df[["scattering_len", "absorption_len"]]
+    )
+
+    # These are both roughly equivalent after scaling
+    f_scattering = interp1d(df["z_norm"], df["scattering_len"])
+    f_absorption = interp1d(df["z_norm"], df["absorption_len"])
+    return f_scattering, f_absorption
+
+
 class IceCubeDataset(Dataset):
     def __init__(
         self, df, pulse_limit=300, transform=None, pre_transform=None, pre_filter=None
@@ -31,6 +49,9 @@ class IceCubeDataset(Dataset):
         super().__init__(transform, pre_transform, pre_filter)
         self.df = df  # DataFrame containing batch_id & event_id
         self.pulse_limit = pulse_limit
+        self.f_scattering, self.f_absorption = ice_transparency(
+            INPUT_PATH / "ice_transparency.txt"
+        )
 
     def len(self):
         return len(self.df)
@@ -50,6 +71,12 @@ class IceCubeDataset(Dataset):
             file_path = INPUT_PATH / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
 
         data = torch.load(file_path)
+
+        # Add ice transparency data
+        z = data.x[:, 2].numpy()
+        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
+        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+        data.x = torch.cat([data.x, scattering], dim=1)
 
         # Only use aux = False
         # mask = data.x[:, -1] < 0
