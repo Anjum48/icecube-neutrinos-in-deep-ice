@@ -1,0 +1,22 @@
+run:
+  timestamp: ${now:%Y%m%d-%H%M%S}
+  n_folds: 5
+  fold: 0
+  seed: 48
+  logging: true
+  train_file: folds.parquet
+comp_name: icecube-neutrinos-in-deep-ice
+storage_drive: storage_dimm2
+model:
+  model_name: DynEdge
+  batch_size: 512
+  learning_rate: 0.0002
+  nearest_neighbours: 8
+  nearest_radius: 160
+trainer:
+  max_epochs: 20
+  accelerator: gpu
+  devices: 2
+  strategy: ddp
+  limit_train_batches: 0.05
+  limit_val_batches: 0.05

@@ -38,6 +38,7 @@ class IceCubeModel(pl.LightningModule):
             nb_inputs=nb_inputs,
             nb_neighbours=nearest_neighbours,
             global_pooling_schemes=["min", "max", "mean", "sum"],
+            features_subset=slice(0, 4),  # NN search using xyzt
         )
         # self.head = nn.Linear(self.model.nb_outputs, 2)
         self.azimuth_task = AzimuthReconstructionWithKappa(

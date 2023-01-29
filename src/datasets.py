@@ -197,7 +197,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         seed: int = 48,
         folds: int = 5,
         nearest_neighbours: int = 8,
-        num_workers: int = 8,
+        num_workers: int = 12,
         **kwargs,
     ):
         super().__init__()
@@ -226,7 +226,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             batch_size=self.batch_size,
             shuffle=True,
-            pin_memory=True,
+            # pin_memory=True,
         )
 
     def val_dataloader(self):
@@ -234,7 +234,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.clr_valid,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            pin_memory=True,
+            # pin_memory=True,
         )
 
     def predict_dataloader(self):

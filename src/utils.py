@@ -290,7 +290,9 @@ class LogSummaryCallback(Callback):
         else:
             pass
 
-        pl_module.log(f"{self.metric_name}_{self.summary_type}", self.best_value)
+        pl_module.log(
+            f"{self.metric_name}_{self.summary_type}", self.best_value, sync_dist=True
+        )
 
 
 def mixup_data_multiobjective(x, y1, y2, alpha=1.0):

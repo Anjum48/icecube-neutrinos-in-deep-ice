@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 import torch
 from omegaconf import DictConfig, ListConfig
 from pytorch_lightning.callbacks import StochasticWeightAveraging
+from pytorch_lightning.plugins import DDPPlugin
 
 from src.datasets import IceCubeDataModule
 from src.models import IceCubeModel
@@ -57,7 +58,7 @@ def run_fold(cfg: DictConfig):
         logger=list(loggers.values()),
         callbacks=list(callbacks.values()),
         resume_from_checkpoint=resume,
-        # plugins=DDPPlugin(find_unused_parameters=False),
+        plugins=DDPPlugin(find_unused_parameters=False),
         # fast_dev_run=True,
         # auto_lr_find=True,
         # overfit_batches=10,
