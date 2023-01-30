@@ -9,8 +9,7 @@ from graphnet.models.task.reconstruction import (
 from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from transformers import get_cosine_schedule_with_warmup
 
-from src.losses import angular_dist_score, CosineLoss
-
+from src.losses import CosineLoss, angular_dist_score
 from src.modules import DynEdge
 from src.utils import add_weight_decay
 
@@ -52,9 +51,11 @@ class IceCubeModel(pl.LightningModule):
             loss_function=self.loss_fn_zen,
             target_labels=["zenith"],
         )
+        # self.norm = nn.BatchNorm1d(self.model.nb_outputs)
 
     def forward(self, x):
         emb = self.model(x)
+        # emb = self.norm(emb)
         azi_out = self.azimuth_task(emb)
         zen_out = self.zenith_task(emb)
 

@@ -18,5 +18,6 @@ trainer:
   accelerator: gpu
   devices: 2
   strategy: ddp
+  sync_batchnorm: true
   limit_train_batches: 0.05
   limit_val_batches: 0.05

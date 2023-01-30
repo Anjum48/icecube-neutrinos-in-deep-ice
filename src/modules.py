@@ -8,6 +8,7 @@ from graphnet.models.utils import calculate_xyzt_homophily
 from graphnet.utilities.config import save_model_config
 from pytorch_lightning import LightningModule
 from torch import LongTensor, Tensor
+from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.data import Data
 from torch_geometric.nn import EdgeConv, GATv2Conv, PointTransformerConv
 from torch_geometric.nn.pool import knn_graph
@@ -250,7 +251,7 @@ class DynEdge(GNN):
                 if ix == 0:
                     nb_in *= 2
                 layers.append(torch.nn.Linear(nb_in, nb_out))
-                # layers.append(torch.nn.Dropout(0.2))
+                layers.append(nn.BatchNorm1d(nb_out))
                 layers.append(self._activation)
 
             conv_layer = DynEdgeConv(
@@ -272,7 +273,7 @@ class DynEdge(GNN):
         layer_sizes = [nb_latent_features] + list(self._post_processing_layer_sizes)
         for nb_in, nb_out in zip(layer_sizes[:-1], layer_sizes[1:]):
             post_processing_layers.append(torch.nn.Linear(nb_in, nb_out))
-            # post_processing_layers.append(torch.nn.Dropout(0.2))
+            post_processing_layers.append(nn.BatchNorm1d(nb_out))
             post_processing_layers.append(self._activation)
 
         self._post_processing = torch.nn.Sequential(*post_processing_layers)
@@ -289,7 +290,7 @@ class DynEdge(GNN):
         layer_sizes = [nb_latent_features] + list(self._readout_layer_sizes)
         for nb_in, nb_out in zip(layer_sizes[:-1], layer_sizes[1:]):
             readout_layers.append(torch.nn.Linear(nb_in, nb_out))
-            # readout_layers.append(torch.nn.Dropout(0.2))
+            readout_layers.append(nn.BatchNorm1d(nb_out))
             readout_layers.append(self._activation)
 
         self._readout = torch.nn.Sequential(*readout_layers)

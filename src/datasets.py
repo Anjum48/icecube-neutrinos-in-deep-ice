@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 import torch
 from graphnet.models.graph_builders import KNNGraphBuilder
 from scipy.interpolate import interp1d
+from torchmetrics.functional import pairwise_euclidean_distance
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data, Dataset
@@ -76,6 +77,29 @@ class IceCubeDataset(Dataset):
         z = data.x[:, 2].numpy()
         scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
         # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+
+        # Add cumulative features
+        # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
+        # data.x = data.x[indices]
+        # cum_charge = torch.cumsum(10 ** (3 * data.x[:, 4]), 0).view(-1, 1)
+        # c_min, c_max = cum_charge.min(), cum_charge.max()
+        # charge_norm = 2 * (cum_charge - c_min) / (c_max - c_min) - 1
+        # t_norm = (2 * (t - t.min()) / (t.max() - t.min()) - 1).view(-1, 1)
+
+        # Distance from previous pulse - uses too much memory :(
+        # mat = pairwise_euclidean_distance(data.x[:, :3])
+        # mat = mat + torch.eye(data.n_pulses) * 1000
+        # dists = []
+
+        # for i in range(data.n_pulses):
+        #     masked_mat = mat[: i + 1, : i + 1]
+        #     if i == 0:
+        #         dists.append(0)
+        #     else:
+        #         dists.append(masked_mat[i].min())
+
+        # dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.25) / 0.25
+
         data.x = torch.cat([data.x, scattering], dim=1)
 
         # Only use aux = False
@@ -226,7 +250,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             batch_size=self.batch_size,
             shuffle=True,
-            # pin_memory=True,
+            pin_memory=True,
         )
 
     def val_dataloader(self):
@@ -234,7 +258,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.clr_valid,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            # pin_memory=True,
+            pin_memory=True,
         )
 
     def predict_dataloader(self):
@@ -242,6 +266,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.clr_valid,
             batch_size=self.batch_size * 8,
             num_workers=self.num_workers,
+            pin_memory=True,
         )
 
 
@@ -257,5 +282,6 @@ class IceCubeDataModule(pl.LightningDataModule):
 
 #     for d in dl:
 #         print(d)
-#         print(d.y.reshape(-1, 2))
+#         print(d.x)
+#         print(d.y)
 #         break
