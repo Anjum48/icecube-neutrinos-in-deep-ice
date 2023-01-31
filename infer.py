@@ -9,11 +9,14 @@ from src.config import OUTPUT_PATH
 from src.datasets import IceCubeDataModule
 from src.losses import angular_dist_score
 from src.models import IceCubeModel
+from src.tta import TTAWrapper
 
 
 def infer(model, loader, device="cuda"):
     model.to(device)
     model.eval()
+
+    model = TTAWrapper(model, device)
 
     predictions, target = [], []
     with torch.no_grad():
@@ -40,7 +43,6 @@ def make_predictions(folder_name, suffix="metric", device="cuda"):
         dm = IceCubeDataModule(**cfg.model)
         dm.setup("predict", fold_n=fold)
         loader = dm.predict_dataloader()
-        dataset = loader.dataset
 
         model = IceCubeModel.load_from_checkpoint(p, strict=False)
 
