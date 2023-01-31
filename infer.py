@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 
 import torch
 from omegaconf import OmegaConf
-from tqdm import tqdm
+from tqdm.rich import tqdm
 
 from src.config import OUTPUT_PATH
 from src.datasets import IceCubeDataModule
@@ -17,12 +17,15 @@ def infer(model, loader, device="cuda"):
 
     predictions, target = [], []
     with torch.no_grad():
-        for batch in tqdm(loader):
+        for batch_n, batch in enumerate(tqdm(loader)):
             batch = batch.to(device)
             pred_azi, pred_zen = model(batch)
             pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
             predictions.append(pred_angles.cpu())
-            target.append(batch.y.cpu())
+            target.append(batch.y.reshape(-1, 2).cpu())
+
+            if batch_n > 0.05 * len(loader):
+                break
 
     return torch.cat(predictions, 0), torch.cat(target, 0)
 
