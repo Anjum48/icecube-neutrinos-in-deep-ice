@@ -3,7 +3,7 @@ import pandas as pd
 import polars as pls
 import pytorch_lightning as pl
 import torch
-from graphnet.models.graph_builders import KNNGraphBuilder
+from graphnet.models.graph_builders import KNNGraphBuilder, RadialGraphBuilder
 from scipy.interpolate import interp1d
 from torchmetrics.functional import pairwise_euclidean_distance
 from sklearn.model_selection import StratifiedKFold
@@ -72,6 +72,8 @@ class IceCubeDataset(Dataset):
             file_path = INPUT_PATH / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
 
         data = torch.load(file_path)
+        # data.batch_id = bid
+        # data.event_id = eid
 
         # Add ice transparency data
         z = data.x[:, 2].numpy()
@@ -232,14 +234,15 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.df = pls.read_parquet(INPUT_PATH / "folds.parquet")
         self.train_steps = 0
         self.pre_transform = KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours)
+        # self.pre_transform = RadialGraphBuilder(radius=160 / 500)
 
     def setup(self, stage=None, fold_n: int = 0):
         trn_df = self.df.filter(pls.col("fold") != fold_n)
         val_df = self.df.filter(pls.col("fold") == fold_n)
 
-        if stage == "fit" or stage is None:
-            self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
-            self.clr_valid = IceCubeDataset(val_df, pre_transform=self.pre_transform)
+        # if stage == "fit" or stage is None:
+        self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
+        self.clr_valid = IceCubeDataset(val_df, pre_transform=self.pre_transform)
 
         self.train_steps = len(self.clr_train) / self.batch_size
         print(len(self.clr_train), "train and", len(self.clr_valid), "valid samples")
@@ -250,7 +253,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             batch_size=self.batch_size,
             shuffle=True,
-            pin_memory=True,
+            # pin_memory=True,
         )
 
     def val_dataloader(self):
@@ -258,13 +261,13 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.clr_valid,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            pin_memory=True,
+            # pin_memory=True,
         )
 
     def predict_dataloader(self):
         return DataLoader(
             self.clr_valid,
-            batch_size=self.batch_size * 8,
+            batch_size=self.batch_size * 2,
             num_workers=self.num_workers,
             pin_memory=True,
         )

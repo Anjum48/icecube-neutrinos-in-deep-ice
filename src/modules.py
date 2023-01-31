@@ -225,7 +225,7 @@ class DynEdge(GNN):
         super().__init__(nb_inputs, self._readout_layer_sizes[-1])
 
         # Remaining member variables()
-        self._activation = torch.nn.LeakyReLU()
+        self._activation = torch.nn.GELU()
         self._nb_inputs = nb_inputs
         self._nb_global_variables = 5 + nb_inputs
         self._nb_neighbours = nb_neighbours
