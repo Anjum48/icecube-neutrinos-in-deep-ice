@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pandas as pd
 import polars as pls
@@ -5,11 +7,11 @@ import pytorch_lightning as pl
 import torch
 from graphnet.models.graph_builders import KNNGraphBuilder, RadialGraphBuilder
 from scipy.interpolate import interp1d
-from torchmetrics.functional import pairwise_euclidean_distance
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
+from torchmetrics.functional import pairwise_euclidean_distance
 
 from src.config import INPUT_PATH, INPUT_PATH_ALT
 
@@ -164,7 +166,7 @@ class IceCubeContrastiveDataset(Dataset):
         prob = np.random.uniform(size=(data.n_pulses))
         mask = torch.tensor(prob > self.drop_node_rate)
         data.x = data.x[mask]
-        data.n_pulses = mask.sum()
+        data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
         return data
 
     def get(self, idx):
@@ -193,7 +195,8 @@ class IceCubeContrastiveDataset(Dataset):
         data.x = torch.cat([data.x, scattering], dim=1)
 
         # Create the augmenented graph
-        data2 = self.drop_nodes(data)
+        data2 = copy.copy(data)
+        data2 = self.drop_nodes(data2)
         data2 = rotation_transform(data2)
 
         # Downsample the large events
@@ -372,11 +375,19 @@ class IceCubeDataModule(pl.LightningDataModule):
 #     sys.path.append(f"/home/anjum/kaggle/{COMP_NAME}/")
 
 #     meta = pls.read_parquet(INPUT_PATH / "train_meta.parquet")
-#     ds = IceCubeDataset(meta)
+#     # ds = IceCubeDataset(meta)
+#     ds = IceCubeContrastiveDataset(meta)
 #     dl = DataLoader(ds, batch_size=4)
 
-#     for d in dl:
-#         print(d)
-#         print(d.x)
-#         print(d.y)
+#     # for d in dl:
+#     #     print(d)
+#     #     print(d.x)
+#     #     print(d.y)
+#     #     break
+
+#     for batch in dl:
+#         print(batch)
+#         a, b = batch
+#         print(a.index_select([0]))
+#         print(b.index_select([1]))
 #         break
