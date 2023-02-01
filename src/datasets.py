@@ -61,7 +61,7 @@ def rotation_transform(data):
 
     azi_rot = data.y[0] - theta
     azi_rot = torch.where(azi_rot > 2 * np.pi, azi_rot - 2 * np.pi, azi_rot)
-    # azi_rot = torch.where(azi_rot < 0, azi_rot + 2 * np.pi, azi_rot)
+    azi_rot = torch.where(azi_rot < 0, azi_rot + 2 * np.pi, azi_rot)
     data.y[0] = azi_rot
 
     return data
