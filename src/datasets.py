@@ -43,6 +43,28 @@ def ice_transparency(data_path, datum=1950):
     return f_scattering, f_absorption
 
 
+def rotation_transform(data):
+    theta = 2 * np.pi * np.random.rand()
+
+    rotz = torch.tensor(
+        [
+            [np.cos(theta), -np.sin(theta), 0],
+            [np.sin(theta), np.cos(theta), 0],
+            [0, 0, 1],
+        ],
+        dtype=torch.float32,
+    ).unsqueeze(0)
+
+    data.x[:, :3] = torch.matmul(data.x[:, :3], rotz)
+
+    azi_rot = data.y[0] - theta
+    azi_rot = torch.where(azi_rot > 2 * np.pi, azi_rot - 2 * np.pi, azi_rot)
+    # azi_rot = torch.where(azi_rot < 0, azi_rot + 2 * np.pi, azi_rot)
+    data.y[0] = azi_rot
+
+    return data
+
+
 class IceCubeDataset(Dataset):
     def __init__(
         self, df, pulse_limit=300, transform=None, pre_transform=None, pre_filter=None
@@ -115,6 +137,75 @@ class IceCubeDataset(Dataset):
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
         return data
+
+
+class IceCubeContrastiveDataset(Dataset):
+    def __init__(
+        self,
+        df,
+        pulse_limit=300,
+        drop_node_rate=0.2,
+        transform=None,
+        pre_transform=None,
+        pre_filter=None,
+    ):
+        super().__init__(transform, pre_transform, pre_filter)
+        self.df = df  # DataFrame containing batch_id & event_id
+        self.pulse_limit = pulse_limit
+        self.drop_node_rate = drop_node_rate
+        self.f_scattering, self.f_absorption = ice_transparency(
+            INPUT_PATH / "ice_transparency.txt"
+        )
+
+    def len(self):
+        return len(self.df)
+
+    def drop_nodes(self, data):
+        prob = np.random.uniform(size=(data.n_pulses))
+        mask = torch.tensor(prob > self.drop_node_rate)
+        data.x = data.x[mask]
+        data.n_pulses = mask.sum()
+        return data
+
+    def get(self, idx):
+        bid, eid = self.df[idx, ["batch_id", "event_id"]]
+        bid, eid = bid[0], eid[0]
+
+        # Batches 501-600 are on /mnt/storage due to the inode limitation
+        # on /mnt/storage_dimm2
+        if bid in range(501, 601):
+            file_path = (
+                INPUT_PATH_ALT / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
+            )
+        # The rest are on /mnt/storage_dimm2
+        else:
+            file_path = INPUT_PATH / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
+
+        data = torch.load(file_path)
+        # data.batch_id = bid
+        # data.event_id = eid
+
+        # Add ice transparency data
+        z = data.x[:, 2].numpy()
+        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
+        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+
+        data.x = torch.cat([data.x, scattering], dim=1)
+
+        # Create the augmenented graph
+        data2 = self.drop_nodes(data)
+        data2 = rotation_transform(data2)
+
+        # Downsample the large events
+        if data.n_pulses > self.pulse_limit:
+            data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
+            data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
+
+        if data2.n_pulses > self.pulse_limit:
+            data2.x = data2.x[np.random.choice(data2.n_pulses, self.pulse_limit)]
+            data2.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
+
+        return data, data2
 
 
 class IceCubeSubmissionDataset(Dataset):
@@ -253,6 +344,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             batch_size=self.batch_size,
             shuffle=True,
+            drop_last=True,
             # pin_memory=True,
         )
 
