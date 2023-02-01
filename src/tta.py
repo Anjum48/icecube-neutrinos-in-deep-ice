@@ -17,6 +17,7 @@ class TTAWrapper(nn.Module):
         self.rmats = [self.rotz(a) for a in self.angles]
 
     def rotz(self, theta):
+        # Counter clockwise rotation
         return (
             torch.tensor(
                 [
@@ -39,8 +40,8 @@ class TTAWrapper(nn.Module):
             a_out, z_out = self.model(data_rot)
 
             # Remove rotation from the azimuth prediction
-            azi_out_sin += torch.sin(a_out - a)
-            azi_out_cos += torch.cos(a_out - a)
+            azi_out_sin += torch.sin(a_out + a)
+            azi_out_cos += torch.cos(a_out + a)
             zen_out += z_out
 
         # https://en.wikipedia.org/wiki/Circular_mean
