@@ -12,6 +12,7 @@ from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from torchmetrics.functional import pairwise_euclidean_distance
+import torch_geometric.transforms as T
 
 from src.config import INPUT_PATH, INPUT_PATH_ALT
 
@@ -65,6 +66,13 @@ def rotation_transform(data):
     data.y[0] = azi_rot
 
     return data
+
+
+def calculate_edge_attributes(d):
+    dist = (d.x[d.edge_index[0], :3] - d.x[d.edge_index[1], :3]).sum(-1).pow(2)
+    delta_t = (d.x[d.edge_index[0], 3] - d.x[d.edge_index[1], 3]).abs()
+    d.edge_attr = torch.stack([dist, delta_t], dim=1)
+    return d
 
 
 class IceCubeDataset(Dataset):
@@ -337,7 +345,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         seed: int = 48,
         folds: int = 5,
         nearest_neighbours: int = 8,
-        num_workers: int = 12,
+        num_workers: int = 16,
         **kwargs,
     ):
         super().__init__()
@@ -347,8 +355,15 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.df = pls.read_parquet(INPUT_PATH / "folds.parquet")
         self.train_steps = 0
-        self.pre_transform = KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours)
+        # self.pre_transform = KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours)
         # self.pre_transform = RadialGraphBuilder(radius=160 / 500)
+        self.pre_transform = T.Compose(
+            [
+                KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours),
+                # RadialGraphBuilder(radius=160 / 500),
+                calculate_edge_attributes,
+            ]
+        )
 
     def setup(self, stage=None, fold_n: int = 0):
         trn_df = self.df.filter(pls.col("fold") != fold_n)
@@ -396,18 +411,22 @@ class IceCubeDataModule(pl.LightningDataModule):
 
 #     meta = pls.read_parquet(INPUT_PATH / "train_meta.parquet")
 #     # ds = IceCubeDataset(meta)
-#     ds = IceCubeContrastiveDataset(meta)
-#     dl = DataLoader(ds, batch_size=4)
+#     ds = IceCubeDataset(meta, pre_transform=KNNGraphBuilder(nb_nearest_neighbours=8))
+#     # dl = DataLoader(ds, batch_size=4)
 
 #     # for d in dl:
 #     #     print(d)
-#     #     print(d.x)
-#     #     print(d.y)
 #     #     break
 
-#     for batch in dl:
-#         print(batch)
-#         a, b = batch
-#         print(a.index_select([0]))
-#         print(b.index_select([1]))
-#         break
+#     # d = ds[0]
+#     # d = calculate_edge_attributes(d)
+#     # print(d)
+#     # print(d.edge_attr[0].mean(), d.edge_attr[0].min(), d.edge_attr[0].max())
+#     # print(d.edge_attr[1].mean(), d.edge_attr[1].min(), d.edge_attr[1].max())
+
+#     # for batch in dl:
+#     #     print(batch)
+#     #     a, b = batch
+#     #     print(a.index_select([0]))
+#     #     print(b.index_select([1]))
+#     #     break

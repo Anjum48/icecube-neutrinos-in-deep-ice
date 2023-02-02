@@ -9,7 +9,7 @@ from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from transformers import get_cosine_schedule_with_warmup
 from torch_geometric.data import Batch
 from src.losses import CosineLoss, angular_dist_score
-from src.modules import DynEdge
+from src.modules import DynEdge, GraphAttentionNetwork, GPS
 from src.utils import add_weight_decay
 
 
@@ -32,13 +32,15 @@ class IceCubeModel(pl.LightningModule):
         self.loss_fn_zen = nn.L1Loss()
         self.loss_fn_cos = CosineLoss()
 
-        self.model = DynEdge(
-            nb_inputs=nb_inputs,
-            nb_neighbours=nearest_neighbours,
-            global_pooling_schemes=["min", "max", "mean", "sum"],
-            features_subset=slice(0, 4),  # NN search using xyzt
-        )
-        # self.head = nn.Linear(self.model.nb_outputs, 2)
+        # self.model = DynEdge(
+        #     nb_inputs=nb_inputs,
+        #     nb_neighbours=nearest_neighbours,
+        #     global_pooling_schemes=["min", "max", "mean", "sum"],
+        #     features_subset=slice(0, 4),  # NN search using xyzt
+        # )
+        # self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
+        self.model = GPS(channels=64, num_layers=10)
+
         self.azimuth_task = AzimuthReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
             loss_function=self.loss_fn_azi,

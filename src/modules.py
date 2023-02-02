@@ -3,15 +3,15 @@ from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch_geometric.transforms as T
 from graphnet.models.gnn.gnn import GNN
 from graphnet.models.utils import calculate_xyzt_homophily
 from graphnet.utilities.config import save_model_config
 from pytorch_lightning import LightningModule
 from torch import LongTensor, Tensor
-from torch_geometric.nn.norm import GraphNorm
 from torch_geometric.data import Data
-from torch_geometric.nn import EdgeConv, GATv2Conv, PointTransformerConv
-from torch_geometric.nn.pool import knn_graph
+from torch_geometric.nn import EdgeConv, GATv2Conv, GINEConv, GPSConv
+from torch_geometric.nn.pool import knn_graph, radius_graph
 from torch_geometric.typing import Adj
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
 
@@ -392,3 +392,140 @@ class DynEdge(GNN):
         x = self._readout(x)
 
         return x
+
+
+# https://colab.research.google.com/github/AntonioLonga/PytorchGeometricTutorial/blob/main/Tutorial3/Tutorial3.ipynb#scrollTo=YAiLrvGcz-6l
+class GraphAttentionNetwork(torch.nn.Module):
+    def __init__(self, nb_inputs=8, nb_outputs=128):
+        super(GraphAttentionNetwork, self).__init__()
+        self.nb_inputs = nb_inputs
+        self.nb_outputs = nb_outputs
+        self.hid = 16
+        self.in_head = 8
+        self.out_head = 1
+
+        self.global_pooling_schemes = ["min", "max", "mean", "sum"]
+
+        self.dropout = 0.2
+
+        self.conv1 = GATv2Conv(
+            nb_inputs, self.hid, heads=self.in_head, dropout=self.dropout
+        )
+        self.conv2 = GATv2Conv(
+            self.hid * self.in_head,
+            self.hid,
+            heads=self.in_head,
+            dropout=self.dropout,
+        )
+        self.conv3 = GATv2Conv(
+            self.hid * self.in_head,
+            nb_outputs,
+            concat=False,
+            heads=self.out_head,
+            dropout=self.dropout,
+        )
+
+        self.head = nn.Sequential(
+            nn.LeakyReLU(),
+            nn.Linear(
+                self.nb_outputs * len(self.global_pooling_schemes), self.nb_outputs
+            ),
+        )
+
+    def _global_pooling(self, x: Tensor, batch: LongTensor) -> Tensor:
+        """Perform global pooling."""
+        pooled = []
+        for pooling_scheme in self.global_pooling_schemes:
+            pooling_fn = GLOBAL_POOLINGS[pooling_scheme]
+            pooled_x = pooling_fn(x, index=batch, dim=0)
+            if isinstance(pooled_x, tuple) and len(pooled_x) == 2:
+                pooled_x, _ = pooled_x
+            pooled.append(pooled_x)
+
+        return torch.cat(pooled, dim=1)
+
+    def forward(self, data):
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+
+        x = F.dropout(x, p=self.dropout)
+        x = self.conv1(x, edge_index)
+
+        edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+
+        x = F.leaky_relu(x)
+        x = F.dropout(x, p=self.dropout)
+        x = self.conv2(x, edge_index)
+
+        edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+
+        x = F.leaky_relu(x)
+        x = F.dropout(x, p=self.dropout)
+        x = self.conv3(x, edge_index)
+
+        x = self._global_pooling(x, batch)  # [batch_size, nb_outputs]
+
+        x = self.head(x)
+
+        return x
+
+
+# Recipe for a General, Powerful, Scalable Graph Transformer
+# https://github.com/pyg-team/pytorch_geometric/blob/master/examples/graph_gps.py
+# https://arxiv.org/pdf/2205.12454.pdf
+class GPS(torch.nn.Module):
+    def __init__(self, channels: int, num_layers: int):
+        super().__init__()
+
+        self.nb_inputs = 8
+        self.nb_outputs = 128
+
+        self.node_emb = nn.Linear(self.nb_inputs, channels)
+        self.pe_lin = nn.Linear(20, channels)  # 20 is used in AddRandomWalkPE
+        self.edge_emb = nn.Linear(2, channels)  # Edge distance & delta_t
+
+        self.global_pooling_schemes = ["min", "max", "mean", "sum"]
+        self.pe_transform = T.AddRandomWalkPE(walk_length=20, attr_name="pe")
+
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers):
+            net = nn.Sequential(
+                nn.Linear(channels, channels),
+                nn.ReLU(),
+                nn.Linear(channels, channels),
+            )
+            conv = GPSConv(channels, GINEConv(net), heads=4, attn_dropout=0.5)
+            self.convs.append(conv)
+
+        self.head = nn.Sequential(
+            # nn.LeakyReLU(),
+            nn.Linear(channels * len(self.global_pooling_schemes), self.nb_outputs),
+        )
+
+    def _global_pooling(self, x: Tensor, batch: LongTensor) -> Tensor:
+        """Perform global pooling."""
+        pooled = []
+        for pooling_scheme in self.global_pooling_schemes:
+            pooling_fn = GLOBAL_POOLINGS[pooling_scheme]
+            pooled_x = pooling_fn(x, index=batch, dim=0)
+            if isinstance(pooled_x, tuple) and len(pooled_x) == 2:
+                pooled_x, _ = pooled_x
+            pooled.append(pooled_x)
+
+        return torch.cat(pooled, dim=1)
+
+    def forward(self, data):
+        data = self.pe_transform(data)
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        x = self.node_emb(x.squeeze(-1)) + self.pe_lin(data.pe)
+        edge_attr = self.edge_emb(data.edge_attr)
+
+        for conv in self.convs:
+            x = conv(x, edge_index, batch, edge_attr=edge_attr)
+        x = self._global_pooling(x, batch)  # [batch_size, nb_outputs]
+        return self.head(x)
