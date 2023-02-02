@@ -286,7 +286,7 @@ class IceCubeSubmissionDatasetV2(Dataset):
         self.batch_df = pls.read_parquet(
             INPUT_PATH / mode / f"batch_{batch_id}.parquet"
         )
-        self.sensor_df = sensor_df
+        self.sensor_df = pls.from_pandas(sensor_df)
         self.pulse_limit = pulse_limit
         self.f_scattering, self.f_absorption = ice_transparency(
             INPUT_PATH / "ice_transparency.txt"
@@ -306,10 +306,11 @@ class IceCubeSubmissionDatasetV2(Dataset):
     def get(self, idx):
         event_id = self.event_ids[idx]
 
-        event = self.batch_df.filter(pls.col("event_id") == 24)
+        event = self.batch_df.filter(pls.col("event_id") == event_id)
         event = event.join(self.sensor_df, left_on="sensor_id", right_on="sensor_id")
 
         x = event[["x", "y", "z", "time", "charge", "qe", "auxiliary"]].to_numpy()
+
         x = torch.tensor(x, dtype=torch.float32)
         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
 

@@ -63,7 +63,6 @@ else:
 
     sys.path.append("/kaggle/input/graphnet/graphnet-main/src")
 
-import polars as pls
 from graphnet.models.graph_builders import KNNGraphBuilder
 from graphnet.models.task.reconstruction import (
     AzimuthReconstructionWithKappa,
@@ -722,68 +721,16 @@ class IceCubeSubmissionDataset(Dataset):
         return data
 
 
-# class IceCubeSubmissionDatasetV2(Dataset):
-#     def __init__(
-#         self,
-#         batch_id,
-#         event_ids,
-#         sensor_df,
-#         mode="test",
-#         pulse_limit=300,
-#         transform=None,
-#         pre_transform=None,
-#         pre_filter=None,
-#     ):
-#         super().__init__(transform, pre_transform, pre_filter)
-#         self.event_ids = event_ids
-#         self.batch_df = pls.read_parquet(
-#             INPUT_PATH / mode / f"batch_{batch_id}.parquet"
-#         )
-#         self.sensor_df = sensor_df
-#         self.pulse_limit = pulse_limit
-#         self.f_scattering, self.f_absorption = ice_transparency(
-#             TRANSPARENCY_PATH
-#         )
-
-#         self.batch_df = self.batch_df.with_columns(
-#             [
-#                 (pls.col("time") - 1.0e04) / 3.0e4,
-#                 pls.col("charge").log() / 3.0,
-#                 pls.col("auxiliary").cast(int) - 0.5,
-#             ]
-#         )
-
-#     def len(self):
-#         return len(self.event_ids)
-
-#     def get(self, idx):
-#         event_id = self.event_ids[idx]
-
-#         event = self.batch_df.filter(pls.col("event_id") == 24)
-#         event = event.join(self.sensor_df, left_on="sensor_id", right_on="sensor_id")
-
-#         x = event[["x", "y", "z", "time", "charge", "qe", "auxiliary"]].to_numpy()
-#         x = torch.tensor(x, dtype=torch.float32)
-#         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
-
-#         # Add ice transparency data
-#         z = data.x[:, 2].numpy()
-#         scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
-#         # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
-
-#         data.x = torch.cat([data.x, scattering], dim=1)
-
-#         # Downsample the large events
-#         if data.n_pulses > self.pulse_limit:
-#             data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
-#             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
-
-#         return data
-
-
 # preprocessing.py
 def prepare_sensors():
-    sensors = pd.read_csv(INPUT_PATH / "sensor_geometry.csv")
+    sensors = pd.read_csv(INPUT_PATH / "sensor_geometry.csv").astype(
+        {
+            "sensor_id": np.int16,
+            "x": np.float32,
+            "y": np.float32,
+            "z": np.float32,
+        }
+    )
     sensors["string"] = 0
     sensors["qe"] = 1
 
@@ -865,7 +812,7 @@ def infer(model, dataset, batch_size=32, device="cuda"):
 
     predictions = []
     with torch.no_grad():
-        for batch in loader:
+        for batch in tqdm(loader):
             batch = batch.to(device)
             pred_azi, pred_zen = model(batch)
             pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
@@ -945,4 +892,4 @@ if __name__ == "__main__":
     else:
         dataset_paths = [OUTPUT_PATH / f for f in model_folders]
 
-    predictions = make_predictions(dataset_paths, mode="train")
+    predictions = make_predictions(dataset_paths, mode="test")

@@ -35,7 +35,14 @@ def tqdm_joblib(tqdm_object):
 
 
 def prepare_sensors():
-    sensors = pd.read_csv(INPUT_PATH / "sensor_geometry.csv", index_col="sensor_id")
+    sensors = pd.read_csv(INPUT_PATH / "sensor_geometry.csv").astype(
+        {
+            "sensor_id": np.int16,
+            "x": np.float32,
+            "y": np.float32,
+            "z": np.float32,
+        }
+    )
     sensors["string"] = 0
     sensors["qe"] = 1
 
