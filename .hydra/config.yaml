@@ -8,7 +8,7 @@ run:
 comp_name: icecube-neutrinos-in-deep-ice
 storage_drive: storage_dimm2
 model:
-  model_name: DynEdge
+  model_name: GPS
   batch_size: 512
   learning_rate: 0.0002
   weight_decay: 0.1

@@ -113,11 +113,12 @@ hydra:
     - hydra.run.dir="/home/anjum/kaggle/icecube-neutrinos-in-deep-ice"
     - hydra.job.name=train_ddp_process_1
     - hydra.mode=RUN
-    task: []
+    task:
+    - model=gps
   job:
     name: train_ddp_process_1
     chdir: null
-    override_dirname: ''
+    override_dirname: model=gps
     id: ???
     num: ???
     config_name: config
@@ -145,7 +146,7 @@ hydra:
     output_dir: /home/anjum/kaggle/icecube-neutrinos-in-deep-ice
     choices:
       trainer: default
-      model: baseline
+      model: gps
       hydra/env: default
       hydra/callbacks: null
       hydra/job_logging: default

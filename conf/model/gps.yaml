@@ -1,0 +1,8 @@
+# If the batch size is reduced by 1/n, reduce the LR by 1/n**2
+# https://www.kaggle.com/cdeotte/tensorflow-longformer-ner-cv-0-617/comments#1624514
+
+model_name: GPS
+batch_size: 512
+learning_rate: 0.0002
+weight_decay: 0.1
+nearest_neighbours: 8

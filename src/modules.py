@@ -478,32 +478,42 @@ class GraphAttentionNetwork(torch.nn.Module):
 # https://github.com/pyg-team/pytorch_geometric/blob/master/examples/graph_gps.py
 # https://arxiv.org/pdf/2205.12454.pdf
 class GPS(torch.nn.Module):
-    def __init__(self, channels: int, num_layers: int):
+    def __init__(
+        self,
+        nb_inputs: int = 8,
+        nb_outputs: int = 128,
+        channels: int = 64,
+        num_layers: int = 10,
+        walk_length: int = 20,
+    ):
         super().__init__()
 
-        self.nb_inputs = 8
-        self.nb_outputs = 128
+        self.nb_inputs = nb_inputs
+        self.nb_outputs = nb_outputs
 
         self.node_emb = nn.Linear(self.nb_inputs, channels)
-        self.pe_lin = nn.Linear(20, channels)  # 20 is used in AddRandomWalkPE
+        self.pe_lin = nn.Linear(walk_length, channels)  # 20 is used in AddRandomWalkPE
         self.edge_emb = nn.Linear(2, channels)  # Edge distance & delta_t
 
         self.global_pooling_schemes = ["min", "max", "mean", "sum"]
-        self.pe_transform = T.AddRandomWalkPE(walk_length=20, attr_name="pe")
+        self.pe_transform = T.AddRandomWalkPE(walk_length=walk_length, attr_name="pe")
 
         self.convs = nn.ModuleList()
         for _ in range(num_layers):
             net = nn.Sequential(
                 nn.Linear(channels, channels),
+                nn.BatchNorm1d(channels),
                 nn.ReLU(),
                 nn.Linear(channels, channels),
+                nn.BatchNorm1d(channels),
             )
-            conv = GPSConv(channels, GINEConv(net), heads=4, attn_dropout=0.5)
+            conv = GPSConv(channels, GINEConv(net), heads=4, attn_dropout=0.2)
             self.convs.append(conv)
 
         self.head = nn.Sequential(
             # nn.LeakyReLU(),
             nn.Linear(channels * len(self.global_pooling_schemes), self.nb_outputs),
+            nn.BatchNorm1d(self.nb_outputs),
         )
 
     def _global_pooling(self, x: Tensor, batch: LongTensor) -> Tensor:
