@@ -39,7 +39,7 @@ class IceCubeModel(pl.LightningModule):
         #     features_subset=slice(0, 4),  # NN search using xyzt
         # )
         # self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
-        self.model = GPS(channels=64, num_layers=10)
+        self.model = GPS(channels=64, num_layers=5)
 
         self.azimuth_task = AzimuthReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,

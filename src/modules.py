@@ -485,6 +485,9 @@ class GPS(torch.nn.Module):
         channels: int = 64,
         num_layers: int = 10,
         walk_length: int = 20,
+        heads: int = 4,
+        dropout: float = 0.2,
+        global_pooling_schemes=["min", "max", "mean", "sum"],
     ):
         super().__init__()
 
@@ -495,7 +498,7 @@ class GPS(torch.nn.Module):
         self.pe_lin = nn.Linear(walk_length, channels)  # 20 is used in AddRandomWalkPE
         self.edge_emb = nn.Linear(2, channels)  # Edge distance & delta_t
 
-        self.global_pooling_schemes = ["min", "max", "mean", "sum"]
+        self.global_pooling_schemes = global_pooling_schemes
         self.pe_transform = T.AddRandomWalkPE(walk_length=walk_length, attr_name="pe")
 
         self.convs = nn.ModuleList()
@@ -507,7 +510,7 @@ class GPS(torch.nn.Module):
                 nn.Linear(channels, channels),
                 nn.BatchNorm1d(channels),
             )
-            conv = GPSConv(channels, GINEConv(net), heads=4, attn_dropout=0.2)
+            conv = GPSConv(channels, GINEConv(net), heads=heads, attn_dropout=dropout)
             self.convs.append(conv)
 
         self.head = nn.Sequential(
