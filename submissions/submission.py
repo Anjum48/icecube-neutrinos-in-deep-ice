@@ -8,30 +8,16 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from graphnet.models.gnn.gnn import GNN
-from graphnet.models.utils import calculate_xyzt_homophily
-from graphnet.utilities.config import save_model_config
+
 from scipy.interpolate import interp1d
 from sklearn.preprocessing import RobustScaler
 from torch import LongTensor, Tensor
 from torch.utils.data import DataLoader, Dataset
-from torch_geometric.data import Data
-from torch_geometric.nn import EdgeConv
-from torch_geometric.nn.pool import knn_graph
-from torch_geometric.typing import Adj
-from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
 
 KERNEL = False if getpass.getuser() == "anjum" else True
 COMP_NAME = "icecube-neutrinos-in-deep-ice"
-
-GLOBAL_POOLINGS = {
-    "min": scatter_min,
-    "max": scatter_max,
-    "sum": scatter_sum,
-    "mean": scatter_mean,
-}
 
 if not KERNEL:
     INPUT_PATH = Path(f"/mnt/storage_dimm2/kaggle_data/{COMP_NAME}")
@@ -41,7 +27,7 @@ if not KERNEL:
 else:
     INPUT_PATH = Path(f"/kaggle/input/{COMP_NAME}")
     MODEL_CACHE = None
-    TRANSPARENCY_PATH = INPUT_PATH / "ice_transparency.txt"
+    TRANSPARENCY_PATH = "/kaggle/input/icecubetransparency/ice_transparency.txt"
 
     # Install packages
     import subprocess
@@ -71,6 +57,21 @@ from graphnet.models.task.reconstruction import (
 from graphnet.training.loss_functions import VonMisesFisher2DLoss
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
+from graphnet.models.gnn.gnn import GNN
+from graphnet.models.utils import calculate_xyzt_homophily
+from graphnet.utilities.config import save_model_config
+from torch_geometric.data import Data
+from torch_geometric.nn import EdgeConv
+from torch_geometric.nn.pool import knn_graph
+from torch_geometric.typing import Adj
+from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
+
+GLOBAL_POOLINGS = {
+    "min": scatter_min,
+    "max": scatter_max,
+    "sum": scatter_sum,
+    "mean": scatter_mean,
+}
 
 _dtype = {
     "batch_id": "int16",
@@ -812,7 +813,7 @@ def infer(model, dataset, batch_size=32, device="cuda"):
 
     predictions = []
     with torch.no_grad():
-        for batch in tqdm(loader):
+        for batch in loader:
             batch = batch.to(device)
             pred_azi, pred_zen = model(batch)
             pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
