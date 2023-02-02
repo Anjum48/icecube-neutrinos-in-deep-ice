@@ -1,6 +1,3 @@
-import random
-
-import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -214,17 +211,17 @@ class IceCubeContastiveModel(pl.LightningModule):
             return azi_out, zen_out
 
     def shuffle_batch(self, batch):
-        data_list = batch.to_data_list()
-        bs = len(data_list)
+        bs = batch.num_graphs
 
-        neg = data_list[: bs // 2]
-        pos = data_list[bs // 2 :]
-        random.shuffle(neg)
-        data_list = neg + pos
+        idx = torch.arange(bs)
+        idx_neg = torch.randperm(bs // 2)
+        idx_pos = idx[bs // 2 :]
+        idx = torch.cat([idx_neg, idx_pos])
+
+        target = torch.where(idx != torch.arange(bs), -1, 1).to(self.device)
+
+        data_list = batch.index_select(idx)
         batch = Batch.from_data_list(data_list)
-
-        target = torch.ones(bs).to(batch.device)
-        target[: bs // 2] *= -1
 
         return batch, target
 
