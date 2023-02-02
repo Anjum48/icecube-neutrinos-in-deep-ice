@@ -155,6 +155,7 @@ class IceCubeContrastiveDataset(Dataset):
         self.df = df  # DataFrame containing batch_id & event_id
         self.pulse_limit = pulse_limit
         self.drop_node_rate = drop_node_rate
+        self.pre_transform = KNNGraphBuilder(nb_nearest_neighbours=8)
         self.f_scattering, self.f_absorption = ice_transparency(
             INPUT_PATH / "ice_transparency.txt"
         )
@@ -208,6 +209,9 @@ class IceCubeContrastiveDataset(Dataset):
             data2.x = data2.x[np.random.choice(data2.n_pulses, self.pulse_limit)]
             data2.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
+        data = self.pre_transform(data)
+        data2 = self.pre_transform(data2)
+
         return data, data2
 
 
@@ -228,6 +232,9 @@ class IceCubeSubmissionDataset(Dataset):
         self.batch_df = pd.read_parquet(INPUT_PATH / mode / f"batch_{batch_id}.parquet")
         self.sensor_df = sensor_df
         self.pulse_limit = pulse_limit
+        self.f_scattering, self.f_absorption = ice_transparency(
+            INPUT_PATH / "ice_transparency.txt"
+        )
 
         self.batch_df["time"] = (self.batch_df["time"] - 1.0e04) / 3.0e4
         self.batch_df["charge"] = np.log10(self.batch_df["charge"]) / 3.0
@@ -246,10 +253,12 @@ class IceCubeSubmissionDataset(Dataset):
         x = torch.tensor(x, dtype=torch.float32)
         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
 
-        # Only use aux = False
-        mask = data.x[:, -1] < 0
-        data.x = data.x[mask]
-        data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
+        # Add ice transparency data
+        z = data.x[:, 2].numpy()
+        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
+        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+
+        data.x = torch.cat([data.x, scattering], dim=1)
 
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
@@ -279,6 +288,9 @@ class IceCubeSubmissionDatasetV2(Dataset):
         )
         self.sensor_df = sensor_df
         self.pulse_limit = pulse_limit
+        self.f_scattering, self.f_absorption = ice_transparency(
+            INPUT_PATH / "ice_transparency.txt"
+        )
 
         self.batch_df = self.batch_df.with_columns(
             [
@@ -300,6 +312,13 @@ class IceCubeSubmissionDatasetV2(Dataset):
         x = event[["x", "y", "z", "time", "charge", "qe", "auxiliary"]].to_numpy()
         x = torch.tensor(x, dtype=torch.float32)
         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
+
+        # Add ice transparency data
+        z = data.x[:, 2].numpy()
+        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
+        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+
+        data.x = torch.cat([data.x, scattering], dim=1)
 
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
