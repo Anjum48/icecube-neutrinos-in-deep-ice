@@ -33,39 +33,64 @@ def infer(model, loader, device="cuda"):
     return torch.cat(predictions, 0), torch.cat(target, 0)
 
 
-def make_predictions(folder_name, suffix="metric", device="cuda"):
+def circular_mean(preds):
+    azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
 
-    mpaths = list((OUTPUT_PATH / folder_name).rglob(f"*{suffix}.ckpt"))
+    for p in preds:
+        a_out, z_out = p[:, 0], p[:, 1]
+        azi_out_sin += torch.sin(a_out)
+        azi_out_cos += torch.cos(a_out)
+        zen_out += z_out
+
+    # https://en.wikipedia.org/wiki/Circular_mean
+    azi_out = torch.atan2(azi_out_sin, azi_out_cos)
+    zen_out /= len(preds)
+
+    return torch.stack([azi_out, zen_out], dim=1)
+
+
+def make_predictions(folders, suffix="metric", device="cuda"):
+
+    mpaths = []
+    for f in folders:
+        mpaths.extend((OUTPUT_PATH / f).rglob(f"*{suffix}.ckpt"))
     print(f"{len(mpaths)} models found.")
 
-    for fold, p in enumerate(mpaths):
+    final_preds = []
+
+    for i, p in enumerate(mpaths):
         cfg = OmegaConf.load(p.parent / ".hydra/config.yaml")
         dm = IceCubeDataModule(**cfg.model)
-        dm.setup("predict", fold_n=fold)
+        dm.setup("predict", fold_n=0)
         loader = dm.predict_dataloader()
 
         model = IceCubeModel.load_from_checkpoint(p, strict=False)
 
         preds, target = infer(model, loader, device)
         mae = angular_dist_score(preds, target)
+        final_preds.append(preds)
 
-        print(f"Fold {fold} MAE: {mae:0.5f}")
+        print(f"Model {i} MAE: {mae:0.5f}")
+
+    final_preds = circular_mean(final_preds)
+    mae = angular_dist_score(final_preds, target)
+    print(f"Ensemble MAE: {mae:0.5f}")
 
 
 if __name__ == "__main__":
 
-    default_checkpoint = "20230130-085318"
+    # default_checkpoint = "20230130-085318"
 
     parser = ArgumentParser()
 
-    parser.add_argument(
-        "--timestamp",
-        action="store",
-        dest="timestamp",
-        help="Timestamp for versioning",
-        default=default_checkpoint,
-        type=str,
-    )
+    # parser.add_argument(
+    #     "--timestamp",
+    #     action="store",
+    #     dest="timestamp",
+    #     help="Timestamp for versioning",
+    #     default=default_checkpoint,
+    #     type=str,
+    # )
 
     parser.add_argument(
         "--gpu",
@@ -76,6 +101,12 @@ if __name__ == "__main__":
         type=str,
     )
 
+    folders = [
+        "20230131-084311",  # 1.0484
+        "20230203-073736",  # 1.0565
+    ]
+    # 1.04833
+
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
-    predictions = make_predictions(args.timestamp, device="cuda")
+    predictions = make_predictions(folders, device="cuda")

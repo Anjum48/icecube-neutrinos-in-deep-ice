@@ -32,14 +32,17 @@ class IceCubeModel(pl.LightningModule):
         self.loss_fn_zen = nn.L1Loss()
         self.loss_fn_cos = CosineLoss()
 
-        # self.model = DynEdge(
-        #     nb_inputs=nb_inputs,
-        #     nb_neighbours=nearest_neighbours,
-        #     global_pooling_schemes=["min", "max", "mean", "sum"],
-        #     features_subset=slice(0, 4),  # NN search using xyzt
-        # )
+        if model_name == "DynEdge":
+            self.model = DynEdge(
+                nb_inputs=nb_inputs,
+                nb_neighbours=nearest_neighbours,
+                global_pooling_schemes=["min", "max", "mean", "sum"],
+                features_subset=slice(0, 4),  # NN search using xyzt
+            )
+        elif model_name == "GPS":
+            self.model = GPS(channels=64, num_layers=10, dropout=0.4)
+
         # self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
-        self.model = GPS(channels=64, num_layers=10, dropout=0.4)
 
         self.azimuth_task = AzimuthReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,

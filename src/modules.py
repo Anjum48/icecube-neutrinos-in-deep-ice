@@ -486,7 +486,7 @@ class GPS(torch.nn.Module):
         num_layers: int = 10,
         walk_length: int = 20,
         heads: int = 4,
-        dropout: float = 0.2,
+        dropout: float = 0.4,
         global_pooling_schemes=["min", "max", "mean", "sum"],
     ):
         super().__init__()
