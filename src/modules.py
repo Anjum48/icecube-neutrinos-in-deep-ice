@@ -505,10 +505,10 @@ class GPS(torch.nn.Module):
         for _ in range(num_layers):
             net = nn.Sequential(
                 nn.Linear(channels, channels),
-                nn.BatchNorm1d(channels),
+                # nn.BatchNorm1d(channels),
                 nn.ReLU(),
                 nn.Linear(channels, channels),
-                nn.BatchNorm1d(channels),
+                # nn.BatchNorm1d(channels),
             )
             conv = GPSConv(channels, GINEConv(net), heads=heads, attn_dropout=dropout)
             self.convs.append(conv)
