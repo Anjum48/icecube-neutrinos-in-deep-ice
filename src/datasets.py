@@ -77,7 +77,7 @@ def calculate_edge_attributes(d):
 
 class IceCubeDataset(Dataset):
     def __init__(
-        self, df, pulse_limit=300, transform=None, pre_transform=None, pre_filter=None
+        self, df, pulse_limit=256, transform=None, pre_transform=None, pre_filter=None
     ):
         super().__init__(transform, pre_transform, pre_filter)
         self.df = df  # DataFrame containing batch_id & event_id
@@ -355,8 +355,6 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.df = pls.read_parquet(INPUT_PATH / "folds.parquet")
         self.train_steps = 0
-        # self.pre_transform = KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours)
-        # self.pre_transform = RadialGraphBuilder(radius=160 / 500)
         self.pre_transform = T.Compose(
             [
                 KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours),
