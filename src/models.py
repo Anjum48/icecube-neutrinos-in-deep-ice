@@ -4,8 +4,9 @@ import torch.nn as nn
 from graphnet.models.task.reconstruction import (
     AzimuthReconstructionWithKappa,
     ZenithReconstruction,
+    DirectionReconstructionWithKappa,
 )
-from graphnet.training.loss_functions import VonMisesFisher2DLoss
+from graphnet.training.loss_functions import VonMisesFisher2DLoss, VonMisesFisher3DLoss
 from transformers import get_cosine_schedule_with_warmup
 from torch_geometric.data import Batch
 from src.losses import CosineLoss, angular_dist_score
@@ -28,8 +29,7 @@ class IceCubeModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
-        self.loss_fn_azi = VonMisesFisher2DLoss()
-        self.loss_fn_zen = nn.L1Loss()
+        self.loss_fn_vmf = VonMisesFisher3DLoss()
         self.loss_fn_cos = CosineLoss()
 
         if model_name == "DynEdge":
@@ -40,48 +40,50 @@ class IceCubeModel(pl.LightningModule):
                 features_subset=slice(0, 4),  # NN search using xyzt
             )
         elif model_name == "GPS":
-            self.model = GPS(channels=64, num_layers=10, dropout=0.4)
+            self.model = GPS(channels=128, num_layers=10, dropout=0.4)
 
-        # self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
-
-        self.azimuth_task = AzimuthReconstructionWithKappa(
+        self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
-            loss_function=self.loss_fn_azi,
-            target_labels=["azimuth", "kappa"],
+            target_labels=["x", "y", "z"],
+            loss_function=VonMisesFisher3DLoss(),
         )
-
-        self.zenith_task = ZenithReconstruction(
-            hidden_size=self.model.nb_outputs,
-            loss_function=self.loss_fn_zen,
-            target_labels=["zenith"],
-        )
-        # self.norm = nn.BatchNorm1d(self.model.nb_outputs)
 
     def forward(self, x):
         emb = self.model(x)
-        # emb = self.norm(emb)
-        azi_out = self.azimuth_task(emb)
-        zen_out = self.zenith_task(emb)
+        out = self.task(emb)
 
-        return azi_out, zen_out
+        return out
+
+    def xyz_to_angles(self, xyz):
+        x = xyz[:, 0]
+        y = xyz[:, 1]
+        z = xyz[:, 2]
+        r = torch.sqrt(x**2 + y**2 + z**2)
+
+        zen = torch.arccos(z / r)
+        azi = torch.arctan2(y, x)
+
+        return torch.stack([azi, zen], dim=1)
+
+    def angles_to_xyz(self, angles):
+        azimuth, zenith = angles[:, 0], angles[:, 1]
+        x = torch.cos(azimuth) * torch.sin(zenith)
+        y = torch.sin(azimuth) * torch.sin(zenith)
+        z = torch.cos(zenith)
+        return torch.stack([x, y, z], dim=1)
 
     def training_step(self, batch, batch_idx):
-        pred_azi, pred_zen = self.forward(batch)
+        pred_xyzk = self.forward(batch)
+        pred_angles = self.xyz_to_angles(pred_xyzk)
 
-        target = batch.y.reshape(-1, 2)
+        target_angles = batch.y.reshape(-1, 2)
+        target_xyz = self.angles_to_xyz(target_angles)
 
-        # weight = 1 - np.exp(-self.global_step / (self.hparams.T_max))
-        loss_azi = self.loss_fn_azi(pred_azi, target)
-        loss_zen = self.loss_fn_zen(pred_zen, target[:, -1].unsqueeze(-1))
-        loss = loss_azi + loss_zen
+        loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
+        loss_cos = self.loss_fn_cos(pred_angles, target_angles)
 
-        pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
-        # metric = angular_dist_score(pred_angles, target)
-
-        loss_cos = self.loss_fn_cos(pred_angles, target)
-
-        if self.current_epoch > 0:
-            loss += loss_cos
+        # if self.current_epoch > 0:
+        #     loss += loss_cos
 
         self.log_dict({"loss/train_step": loss})
         return {"loss": loss}
@@ -91,28 +93,23 @@ class IceCubeModel(pl.LightningModule):
         self.log("loss/train", avg_loss, sync_dist=True)
 
     def validation_step(self, batch, batch_idx):
-        pred_azi, pred_zen = self.forward(batch)
+        pred_xyzk = self.forward(batch)
+        pred_angles = self.xyz_to_angles(pred_xyzk)
 
-        target = batch.y.reshape(-1, 2)
+        target_angles = batch.y.reshape(-1, 2)
+        target_xyz = self.angles_to_xyz(target_angles)
 
-        # weight = 1 - np.exp(-self.global_step / (self.hparams.T_max))
-        loss_azi = self.loss_fn_azi(pred_azi, target)
-        loss_zen = self.loss_fn_zen(pred_zen, target[:, -1].unsqueeze(-1))
-        loss = loss_azi + loss_zen
+        loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
+        loss_cos = self.loss_fn_cos(pred_angles, target_angles)
 
-        pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
-        metric = angular_dist_score(pred_angles, target)
+        metric = angular_dist_score(pred_angles, target_angles)
 
-        loss_cos = self.loss_fn_cos(pred_angles, target)
-
-        if self.current_epoch > 0:
-            loss += loss_cos
+        # if self.current_epoch > 0:
+        #     loss += loss_cos
 
         output = {
             "val_loss": loss,
             "metric": metric,
-            "val_loss_azi": loss_azi,
-            "val_loss_zen": loss_zen,
             "val_loss_cos": loss_cos,
         }
 
@@ -120,8 +117,6 @@ class IceCubeModel(pl.LightningModule):
 
     def validation_epoch_end(self, outputs):
         loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
-        loss_val_azi = torch.stack([x["val_loss_azi"] for x in outputs]).mean()
-        loss_val_zen = torch.stack([x["val_loss_zen"] for x in outputs]).mean()
         val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
         metric = torch.stack([x["metric"] for x in outputs]).mean()
 
@@ -132,8 +127,8 @@ class IceCubeModel(pl.LightningModule):
         )
         self.log_dict(
             {
-                "loss/valid_azi": loss_val_azi,
-                "loss/valid_zen": loss_val_zen,
+                # "loss/valid_azi": loss_val_azi,
+                # "loss/valid_zen": loss_val_zen,
                 "loss/valid_cos": val_loss_cos,
             },
             prog_bar=False,
