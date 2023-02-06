@@ -9,7 +9,7 @@ from graphnet.models.task.reconstruction import (
 from graphnet.training.loss_functions import VonMisesFisher2DLoss, VonMisesFisher3DLoss
 from transformers import get_cosine_schedule_with_warmup
 from torch_geometric.data import Batch
-from src.losses import CosineLoss, angular_dist_score
+from src.losses import angular_dist_score
 from src.modules import DynEdge, GraphAttentionNetwork, GPS
 from src.utils import add_weight_decay
 
@@ -30,7 +30,7 @@ class IceCubeModel(pl.LightningModule):
         self.save_hyperparameters()
 
         self.loss_fn_vmf = VonMisesFisher3DLoss()
-        self.loss_fn_cos = CosineLoss()
+        self.loss_fn_cos = nn.CosineSimilarity()
 
         if model_name == "DynEdge":
             self.model = DynEdge(
@@ -41,6 +41,8 @@ class IceCubeModel(pl.LightningModule):
             )
         elif model_name == "GPS":
             self.model = GPS(channels=128, num_layers=10, dropout=0.4)
+        elif model_name == "GAT":
+            self.model = GraphAttentionNetwork()
 
         self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
@@ -80,10 +82,8 @@ class IceCubeModel(pl.LightningModule):
         target_xyz = self.angles_to_xyz(target_angles)
 
         loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
-        loss_cos = self.loss_fn_cos(pred_angles, target_angles)
-
-        # if self.current_epoch > 0:
-        #     loss += loss_cos
+        loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
+        loss += loss_cos
 
         self.log_dict({"loss/train_step": loss})
         return {"loss": loss}
@@ -100,12 +100,10 @@ class IceCubeModel(pl.LightningModule):
         target_xyz = self.angles_to_xyz(target_angles)
 
         loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
-        loss_cos = self.loss_fn_cos(pred_angles, target_angles)
+        loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
+        loss += loss_cos
 
         metric = angular_dist_score(pred_angles, target_angles)
-
-        # if self.current_epoch > 0:
-        #     loss += loss_cos
 
         output = {
             "val_loss": loss,

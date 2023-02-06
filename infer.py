@@ -102,10 +102,8 @@ if __name__ == "__main__":
     )
 
     folders = [
-        "20230131-084311",  # 1.0484
-        "20230203-073736",  # 1.0565
+        "20230204-094225",
     ]
-    # 1.04833
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
