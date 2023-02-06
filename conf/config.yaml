@@ -9,7 +9,7 @@ run:
   fold: 0
   seed: 48
   logging: True
-  train_file: folds.parquet
+  train_file: folds_10.parquet
 
 comp_name: icecube-neutrinos-in-deep-ice
 storage_drive: storage_dimm2
