@@ -23,7 +23,7 @@ def infer(model, loader, device="cuda"):
         for batch_n, batch in enumerate(tqdm(loader)):
             batch = batch.to(device)
             pred_azi, pred_zen = model(batch)
-            pred_angles = torch.stack([pred_azi[:, 0], pred_zen[:, 0]], dim=1)
+            pred_angles = torch.stack([pred_azi, pred_zen], dim=1)
             predictions.append(pred_angles.cpu())
             target.append(batch.y.reshape(-1, 2).cpu())
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     )
 
     folders = [
-        "20230204-094225",
+        "20230206-080858",
     ]
 
     args = parser.parse_args()

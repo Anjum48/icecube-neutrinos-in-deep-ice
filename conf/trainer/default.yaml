@@ -4,5 +4,5 @@ devices: 2
 strategy: ddp
 # precision: 16
 sync_batchnorm: True
-limit_train_batches: 0.05
-limit_val_batches: 0.05
+# limit_train_batches: 0.05
+# limit_val_batches: 0.05

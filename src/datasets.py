@@ -340,6 +340,7 @@ class IceCubeSubmissionDatasetV2(Dataset):
 class IceCubeDataModule(pl.LightningDataModule):
     def __init__(
         self,
+        train_file: str = "folds.parquet",
         batch_size: int = 32,
         max_len: int = 2048,
         seed: int = 48,
@@ -353,7 +354,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.max_len = max_len
         self.num_workers = num_workers
-        self.df = pls.read_parquet(INPUT_PATH / "folds.parquet")
+        self.df = pls.read_parquet(INPUT_PATH / train_file)
         self.train_steps = 0
         self.pre_transform = T.Compose(
             [

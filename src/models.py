@@ -124,11 +124,7 @@ class IceCubeModel(pl.LightningModule):
             sync_dist=True,
         )
         self.log_dict(
-            {
-                # "loss/valid_azi": loss_val_azi,
-                # "loss/valid_zen": loss_val_zen,
-                "loss/valid_cos": val_loss_cos,
-            },
+            {"loss/valid_cos": val_loss_cos},
             prog_bar=False,
             sync_dist=True,
         )
@@ -174,7 +170,6 @@ class IceCubeContastiveModel(pl.LightningModule):
 
         self.loss_fn_azi = VonMisesFisher2DLoss()
         self.loss_fn_zen = nn.L1Loss()
-        self.loss_fn_cos = CosineLoss()
         self.loss_fn_dist = nn.CosineEmbeddingLoss()
 
         self.model = DynEdge(

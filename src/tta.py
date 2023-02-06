@@ -37,7 +37,10 @@ class TTAWrapper(nn.Module):
 
         for a, mat in zip(self.angles, self.rmats):
             data_rot.x[:, :3] = torch.matmul(data.x[:, :3], mat)
-            a_out, z_out = self.model(data_rot)
+
+            pred_xyzk = self.model(data_rot)
+            pred_angles = self.model.xyz_to_angles(pred_xyzk)
+            a_out, z_out = pred_angles[:, 0], pred_angles[:, 1]
 
             # Remove rotation from the azimuth prediction
             azi_out_sin += torch.sin(a_out + a)
