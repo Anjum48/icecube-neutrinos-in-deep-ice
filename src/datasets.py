@@ -340,7 +340,7 @@ class IceCubeSubmissionDatasetV2(Dataset):
 class IceCubeDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        train_file: str = "folds.parquet",
+        train_file: str = "folds_10.parquet",
         batch_size: int = 32,
         max_len: int = 2048,
         seed: int = 48,
@@ -396,7 +396,7 @@ class IceCubeDataModule(pl.LightningDataModule):
     def predict_dataloader(self):
         return DataLoader(
             self.clr_valid,
-            batch_size=self.batch_size * 2,
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
         )

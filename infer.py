@@ -102,7 +102,7 @@ if __name__ == "__main__":
     )
 
     folders = [
-        "20230206-080858",
+        "20230207-203834",
     ]
 
     args = parser.parse_args()
