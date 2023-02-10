@@ -483,10 +483,10 @@ class GPS(torch.nn.Module):
         nb_inputs: int = 8,
         nb_outputs: int = 128,
         channels: int = 64,
-        num_layers: int = 10,
+        num_layers: int = 8,
         walk_length: int = 20,
         heads: int = 4,
-        dropout: float = 0.4,
+        dropout: float = 0.5,
         global_pooling_schemes=["min", "max", "mean", "sum"],
     ):
         super().__init__()
@@ -494,29 +494,35 @@ class GPS(torch.nn.Module):
         self.nb_inputs = nb_inputs
         self.nb_outputs = nb_outputs
 
-        self.node_emb = nn.Linear(self.nb_inputs, channels)
-        self.pe_lin = nn.Linear(walk_length, channels)  # 20 is used in AddRandomWalkPE
-        self.edge_emb = nn.Linear(2, channels)  # Edge distance & delta_t
+        self.node_emb = nn.Linear(self.nb_inputs, channels, bias=False)
+        self.edge_emb = nn.Linear(2, channels, bias=False)  # Edge distance & delta_t
+        self.pe_lin = nn.Linear(walk_length, channels, bias=False)
 
-        self.global_pooling_schemes = global_pooling_schemes
         self.pe_transform = T.AddRandomWalkPE(walk_length=walk_length, attr_name="pe")
+        self.global_pooling_schemes = global_pooling_schemes
 
         self.convs = nn.ModuleList()
         for _ in range(num_layers):
             net = nn.Sequential(
-                nn.Linear(channels, channels),
+                nn.Linear(channels, channels, bias=False),
                 # nn.BatchNorm1d(channels),
-                nn.ReLU(),
-                nn.Linear(channels, channels),
-                # nn.BatchNorm1d(channels),
+                nn.GELU(),
+                nn.Linear(channels, channels, bias=False),
             )
-            conv = GPSConv(channels, GINEConv(net), heads=heads, attn_dropout=dropout)
+            conv = GPSConv(
+                channels,
+                GINEConv(net),
+                heads=heads,
+                attn_dropout=dropout,
+                act="gelu",
+            )
             self.convs.append(conv)
 
         self.head = nn.Sequential(
-            # nn.LeakyReLU(),
+            # nn.BatchNorm1d(channels * len(self.global_pooling_schemes)),
+            nn.GELU(),
             nn.Linear(channels * len(self.global_pooling_schemes), self.nb_outputs),
-            nn.BatchNorm1d(self.nb_outputs),
+            # nn.BatchNorm1d(self.nb_outputs),
         )
 
     def _global_pooling(self, x: Tensor, batch: LongTensor) -> Tensor:

@@ -20,7 +20,7 @@ class IceCubeModel(pl.LightningModule):
         model_name: str = "DynEdge",
         learning_rate: float = 0.001,
         weight_decay: float = 0.01,
-        warmup: float = 0.1,
+        warmup: float = 0.0,
         T_max: int = 1000,
         nb_inputs: int = 8,
         nearest_neighbours: int = 8,
@@ -40,7 +40,7 @@ class IceCubeModel(pl.LightningModule):
                 features_subset=slice(0, 4),  # NN search using xyzt
             )
         elif model_name == "GPS":
-            self.model = GPS(channels=128, num_layers=10, dropout=0.4)
+            self.model = GPS(channels=128, num_layers=7, dropout=0.5, heads=4)
         elif model_name == "GAT":
             self.model = GraphAttentionNetwork()
 
@@ -140,8 +140,7 @@ class IceCubeModel(pl.LightningModule):
 
         sch = get_cosine_schedule_with_warmup(
             opt,
-            # num_warmup_steps=int(0.1 * self.hparams.T_max),
-            num_warmup_steps=int(0 * self.hparams.T_max),
+            num_warmup_steps=int(self.hparams.warmup * self.hparams.T_max),
             num_training_steps=self.hparams.T_max,
             num_cycles=0.5,  # 1,
             last_epoch=-1,
