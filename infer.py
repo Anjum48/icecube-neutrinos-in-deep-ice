@@ -27,7 +27,7 @@ def infer(model, loader, device="cuda"):
             predictions.append(pred_angles.cpu())
             target.append(batch.y.reshape(-1, 2).cpu())
 
-            if batch_n > 0.05 * len(loader):
+            if batch_n > 0.10 * len(loader):  # Roughly the size of test
                 break
 
     return torch.cat(predictions, 0), torch.cat(target, 0)
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     folders = [
         # "20230207-203834",  # 0.99915
         # "20230210-081543",  # 0.99981
-        "20230214-103416",
+        "20230214-103416",  # 0.99763 (0.99819 with 10%)
     ]
     # 0.99458
 

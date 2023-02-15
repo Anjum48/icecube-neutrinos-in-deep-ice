@@ -10,7 +10,7 @@ from graphnet.utilities.config import save_model_config
 from pytorch_lightning import LightningModule
 from torch import LongTensor, Tensor
 from torch_geometric.data import Data
-from torch_geometric.nn import EdgeConv, GATv2Conv, GINEConv, GPSConv, aggr
+from torch_geometric.nn import EdgeConv, GATv2Conv, GINEConv, GPSConv, GravNetConv, aggr
 from torch_geometric.nn.pool import knn_graph, radius_graph
 from torch_geometric.typing import Adj
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
@@ -546,4 +546,49 @@ class GPS(torch.nn.Module):
             x = conv(x, edge_index, batch, edge_attr=edge_attr)
 
         x = self.global_pooling(x, batch)
+        return self.head(x)
+
+
+class GravNet(torch.nn.Module):
+    def __init__(
+        self,
+        nb_inputs: int = 8,
+        nb_outputs: int = 128,
+        hidden_channels: int = 64,
+        s: int = 4,
+        flr: int = 32,
+        k: int = 8,
+    ):
+        super(GravNet, self).__init__()
+        self.conv1 = GravNetConv(nb_inputs, hidden_channels, s, flr, k)
+        self.conv2 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
+        self.conv3 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
+
+        self.global_pooling = aggr.MultiAggregation(
+            [
+                "min",
+                "max",
+                "mean",
+                "sum",
+                "std",
+                "median",
+            ],
+        )
+
+        self.head = nn.Linear(
+            hidden_channels * len(self.global_pooling.aggrs), nb_outputs
+        )
+
+    def forward(self, data):
+        x, batch = data.x, data.batch
+
+        x = self.conv1(x, batch)
+        x = x.relu()
+        x = self.conv2(x, batch)
+        x = x.relu()
+        x = self.conv3(x, batch)
+
+        x = self.global_pooling(x, batch)
+
+        # TODO: Try skip connections?
         return self.head(x)
