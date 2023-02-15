@@ -358,7 +358,9 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.train_steps = 0
         self.pre_transform = T.Compose(
             [
-                KNNGraphBuilder(nb_nearest_neighbours=nearest_neighbours),
+                KNNGraphBuilder(
+                    nb_nearest_neighbours=nearest_neighbours, columns=[0, 1, 2, 3]
+                ),
                 # RadialGraphBuilder(radius=160 / 500),
                 calculate_edge_attributes,
             ]

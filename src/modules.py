@@ -10,7 +10,7 @@ from graphnet.utilities.config import save_model_config
 from pytorch_lightning import LightningModule
 from torch import LongTensor, Tensor
 from torch_geometric.data import Data
-from torch_geometric.nn import EdgeConv, GATv2Conv, GINEConv, GPSConv
+from torch_geometric.nn import EdgeConv, GATv2Conv, GINEConv, GPSConv, aggr
 from torch_geometric.nn.pool import knn_graph, radius_graph
 from torch_geometric.typing import Adj
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
@@ -400,13 +400,11 @@ class GraphAttentionNetwork(torch.nn.Module):
         super(GraphAttentionNetwork, self).__init__()
         self.nb_inputs = nb_inputs
         self.nb_outputs = nb_outputs
-        self.hid = 16
-        self.in_head = 8
+        self.hid = 128
+        self.in_head = 4
         self.out_head = 1
 
-        self.global_pooling_schemes = ["min", "max", "mean", "sum"]
-
-        self.dropout = 0.2
+        self.dropout = 0.5
 
         self.conv1 = GATv2Conv(
             nb_inputs, self.hid, heads=self.in_head, dropout=self.dropout
@@ -425,49 +423,46 @@ class GraphAttentionNetwork(torch.nn.Module):
             dropout=self.dropout,
         )
 
-        self.head = nn.Sequential(
-            nn.LeakyReLU(),
-            nn.Linear(
-                self.nb_outputs * len(self.global_pooling_schemes), self.nb_outputs
-            ),
+        self.global_pooling = aggr.MultiAggregation(
+            [
+                "min",
+                "max",
+                "mean",
+                "sum",
+                "std",
+                "median",
+            ],
         )
 
-    def _global_pooling(self, x: Tensor, batch: LongTensor) -> Tensor:
-        """Perform global pooling."""
-        pooled = []
-        for pooling_scheme in self.global_pooling_schemes:
-            pooling_fn = GLOBAL_POOLINGS[pooling_scheme]
-            pooled_x = pooling_fn(x, index=batch, dim=0)
-            if isinstance(pooled_x, tuple) and len(pooled_x) == 2:
-                pooled_x, _ = pooled_x
-            pooled.append(pooled_x)
-
-        return torch.cat(pooled, dim=1)
+        self.head = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(self.nb_outputs * 6, self.nb_outputs),
+        )
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
-        edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
 
         x = F.dropout(x, p=self.dropout)
         x = self.conv1(x, edge_index)
 
-        edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
 
-        x = F.leaky_relu(x)
+        x = F.gelu(x)
         x = F.dropout(x, p=self.dropout)
         x = self.conv2(x, edge_index)
 
-        edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
 
-        x = F.leaky_relu(x)
+        x = F.gelu(x)
         x = F.dropout(x, p=self.dropout)
         x = self.conv3(x, edge_index)
 
-        x = self._global_pooling(x, batch)  # [batch_size, nb_outputs]
+        x = self.global_pooling(x, batch)
 
         x = self.head(x)
 
@@ -487,7 +482,6 @@ class GPS(torch.nn.Module):
         walk_length: int = 20,
         heads: int = 4,
         dropout: float = 0.5,
-        global_pooling_schemes=["min", "max", "mean", "sum"],
     ):
         super().__init__()
 
@@ -499,13 +493,11 @@ class GPS(torch.nn.Module):
         self.pe_lin = nn.Linear(walk_length, channels, bias=False)
 
         self.pe_transform = T.AddRandomWalkPE(walk_length=walk_length, attr_name="pe")
-        self.global_pooling_schemes = global_pooling_schemes
 
         self.convs = nn.ModuleList()
         for _ in range(num_layers):
             net = nn.Sequential(
                 nn.Linear(channels, channels, bias=False),
-                # nn.BatchNorm1d(channels),
                 nn.GELU(),
                 nn.Linear(channels, channels, bias=False),
             )
@@ -518,24 +510,30 @@ class GPS(torch.nn.Module):
             )
             self.convs.append(conv)
 
-        self.head = nn.Sequential(
-            # nn.BatchNorm1d(channels * len(self.global_pooling_schemes)),
-            nn.GELU(),
-            nn.Linear(channels * len(self.global_pooling_schemes), self.nb_outputs),
-            # nn.BatchNorm1d(self.nb_outputs),
+        self.global_pooling = aggr.MultiAggregation(
+            [
+                "min",
+                "max",
+                "mean",
+                "sum",
+                "std",
+                "median",
+                # aggr.PowerMeanAggregation(learn=True),
+                # aggr.LSTMAggregation(channels, channels),
+                # aggr.SoftmaxAggregation(t=1, learn=True),
+            ],
+            # mode="attn",
+            # mode_kwargs={
+            #     "in_channels": channels,
+            #     "out_channels": channels * 2,
+            #     "num_heads": 4,
+            # },
         )
 
-    def _global_pooling(self, x: Tensor, batch: LongTensor) -> Tensor:
-        """Perform global pooling."""
-        pooled = []
-        for pooling_scheme in self.global_pooling_schemes:
-            pooling_fn = GLOBAL_POOLINGS[pooling_scheme]
-            pooled_x = pooling_fn(x, index=batch, dim=0)
-            if isinstance(pooled_x, tuple) and len(pooled_x) == 2:
-                pooled_x, _ = pooled_x
-            pooled.append(pooled_x)
-
-        return torch.cat(pooled, dim=1)
+        self.head = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(channels * 6, self.nb_outputs),
+        )
 
     def forward(self, data):
         data = self.pe_transform(data)
@@ -546,5 +544,6 @@ class GPS(torch.nn.Module):
 
         for conv in self.convs:
             x = conv(x, edge_index, batch, edge_attr=edge_attr)
-        x = self._global_pooling(x, batch)  # [batch_size, nb_outputs]
+
+        x = self.global_pooling(x, batch)
         return self.head(x)

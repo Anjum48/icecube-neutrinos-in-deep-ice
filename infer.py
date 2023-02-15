@@ -97,13 +97,16 @@ if __name__ == "__main__":
         action="store",
         dest="gpu",
         help="GPU index to use",
-        default="1",
+        default="0",
         type=str,
     )
 
     folders = [
-        "20230207-203834",
+        # "20230207-203834",  # 0.99915
+        # "20230210-081543",  # 0.99981
+        "20230214-103416",
     ]
+    # 0.99458
 
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
