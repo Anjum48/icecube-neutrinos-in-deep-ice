@@ -12,6 +12,7 @@ from torch_geometric.data import Batch
 from src.losses import angular_dist_score
 from src.modules import DynEdge, GraphAttentionNetwork, GPS
 from src.utils import add_weight_decay
+# from src.lion_pytorch import Lion
 
 
 class IceCubeModel(pl.LightningModule):
@@ -137,6 +138,7 @@ class IceCubeModel(pl.LightningModule):
         )
 
         opt = torch.optim.AdamW(parameters, lr=self.hparams.learning_rate)
+        # opt = Lion(parameters, lr=self.hparams.learning_rate)
 
         sch = get_cosine_schedule_with_warmup(
             opt,

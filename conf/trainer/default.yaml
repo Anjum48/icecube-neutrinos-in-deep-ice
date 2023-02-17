@@ -1,4 +1,4 @@
-max_epochs: 3
+max_epochs: 4
 accelerator: gpu
 devices: 2
 strategy: ddp
