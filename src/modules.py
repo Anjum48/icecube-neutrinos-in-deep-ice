@@ -554,15 +554,19 @@ class GravNet(torch.nn.Module):
         self,
         nb_inputs: int = 8,
         nb_outputs: int = 128,
-        hidden_channels: int = 64,
+        hidden_channels: int = 256,
         s: int = 4,
         flr: int = 32,
-        k: int = 8,
+        k: int = 20,
     ):
         super(GravNet, self).__init__()
+        self.nb_inputs = nb_inputs
+        self.nb_outputs = nb_outputs
         self.conv1 = GravNetConv(nb_inputs, hidden_channels, s, flr, k)
         self.conv2 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
         self.conv3 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
+        self.conv4 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
+        self.act = nn.ReLU()
 
         self.global_pooling = aggr.MultiAggregation(
             [
@@ -575,6 +579,7 @@ class GravNet(torch.nn.Module):
             ],
         )
 
+        # self.mid = nn.Linear(hidden_channels * 4, hidden_channels)
         self.head = nn.Linear(
             hidden_channels * len(self.global_pooling.aggrs), nb_outputs
         )
@@ -582,13 +587,16 @@ class GravNet(torch.nn.Module):
     def forward(self, data):
         x, batch = data.x, data.batch
 
-        x = self.conv1(x, batch)
-        x = x.relu()
-        x = self.conv2(x, batch)
-        x = x.relu()
-        x = self.conv3(x, batch)
+        x1 = self.conv1(x, batch)
+        x1 = self.act(x1)
+        x2 = self.conv2(x1, batch)
+        x2 = self.act(x2)
+        x3 = self.conv3(x2, batch)
+        x3 = self.act(x3)
+        x4 = self.conv4(x3, batch)
 
-        x = self.global_pooling(x, batch)
+        # x = torch.cat([x1, x2, x3, x4], dim=1)
+        # x = self.mid(x)
+        x = self.global_pooling(x4, batch)
 
-        # TODO: Try skip connections?
         return self.head(x)

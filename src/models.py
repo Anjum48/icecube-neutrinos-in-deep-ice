@@ -10,7 +10,7 @@ from graphnet.training.loss_functions import VonMisesFisher2DLoss, VonMisesFishe
 from transformers import get_cosine_schedule_with_warmup
 from torch_geometric.data import Batch
 from src.losses import angular_dist_score
-from src.modules import DynEdge, GraphAttentionNetwork, GPS
+from src.modules import DynEdge, GraphAttentionNetwork, GPS, GravNet
 from src.utils import add_weight_decay
 # from src.lion_pytorch import Lion
 
@@ -44,6 +44,8 @@ class IceCubeModel(pl.LightningModule):
             self.model = GPS(channels=128, num_layers=7, dropout=0.5, heads=4)
         elif model_name == "GAT":
             self.model = GraphAttentionNetwork()
+        elif model_name == "GravNet":
+            self.model = GravNet()
 
         self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
