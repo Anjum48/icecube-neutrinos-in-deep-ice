@@ -549,14 +549,21 @@ class GPS(torch.nn.Module):
         return self.head(x)
 
 
+# class GravNetBlock(torch.nn.Module):
+#     def __init__(self, in_features, out_features, s, flr, k) -> None:
+#         super().__init__()
+
+#         self.conv = GravNetConv(nb_inputs, hidden_channels, s, flr, k)
+
+
 class GravNet(torch.nn.Module):
     def __init__(
         self,
         nb_inputs: int = 8,
         nb_outputs: int = 128,
-        hidden_channels: int = 256,
+        hidden_channels: int = 512,
         s: int = 4,
-        flr: int = 32,
+        flr: int = 64,
         k: int = 20,
     ):
         super(GravNet, self).__init__()
@@ -579,24 +586,25 @@ class GravNet(torch.nn.Module):
             ],
         )
 
-        # self.mid = nn.Linear(hidden_channels * 4, hidden_channels)
+        self.mid = nn.Linear(nb_inputs + hidden_channels * 4, hidden_channels)
         self.head = nn.Linear(
             hidden_channels * len(self.global_pooling.aggrs), nb_outputs
         )
 
     def forward(self, data):
-        x, batch = data.x, data.batch
+        x0, batch = data.x, data.batch
 
-        x1 = self.conv1(x, batch)
+        x1 = self.conv1(x0, batch)
         x1 = self.act(x1)
         x2 = self.conv2(x1, batch)
         x2 = self.act(x2)
         x3 = self.conv3(x2, batch)
         x3 = self.act(x3)
         x4 = self.conv4(x3, batch)
+        x4 = self.act(x4)
 
-        # x = torch.cat([x1, x2, x3, x4], dim=1)
-        # x = self.mid(x)
+        x = torch.cat([x0, x1, x2, x3, x4], dim=1)
+        x = self.mid(x)
         x = self.global_pooling(x4, batch)
 
         return self.head(x)
