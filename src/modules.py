@@ -622,13 +622,13 @@ class GravNetBlock(nn.Module):
         self.conv = GravNetConv(in_features, out_features, s, flr, k)
         self.act = nn.ReLU()
         self.bn = nn.BatchNorm1d(out_features)
-        self.do = nn.Dropout()
+        self.dropout = nn.Dropout(0.2)
 
     def forward(self, x, batch):
         x = self.conv(x, batch)
-        x = self.bn(x)
+        # x = self.bn(x)
         x = self.act(x)
-        # x = self.do(x)
+        x = self.dropout(x)
         return x
 
 
@@ -637,8 +637,8 @@ class GravNet(torch.nn.Module):
         self,
         nb_inputs: int = 8,
         nb_outputs: int = 128,
-        hidden_channels: int = 512,
-        num_blocks: int = 10,
+        hidden_channels: int = 256,
+        num_blocks: int = 8,
         s: int = 4,
         flr: int = 64,
         k: int = 20,
@@ -648,13 +648,26 @@ class GravNet(torch.nn.Module):
         self.nb_outputs = nb_outputs
 
         self.blocks = nn.ModuleList()
+
+        total_hidden = nb_inputs
+        step = 3
+
         for n in range(num_blocks):
+            multiplier = n // step
+
             if n == 0:
-                self.blocks.append(GravNetBlock(nb_inputs, hidden_channels, s, flr, k))
+                in_features = nb_inputs
+                out_features = hidden_channels
             else:
-                self.blocks.append(
-                    GravNetBlock(hidden_channels, hidden_channels, s, flr, k)
-                )
+                in_features = hidden_channels * 2**multiplier
+                out_features = in_features
+
+                if n % step == step - 1:
+                    out_features *= 2
+
+            total_hidden += out_features
+
+            self.blocks.append(GravNetBlock(in_features, out_features, s, flr, k))
 
         self.global_pooling = aggr.MultiAggregation(
             [
@@ -667,9 +680,7 @@ class GravNet(torch.nn.Module):
             ],
         )
 
-        self.mid = nn.Linear(
-            nb_inputs + hidden_channels * num_blocks, hidden_channels * 2
-        )
+        self.mid = nn.Linear(total_hidden, hidden_channels * 2)
         self.head = nn.Linear(
             hidden_channels * 2 * len(self.global_pooling.aggrs), nb_outputs
         )
