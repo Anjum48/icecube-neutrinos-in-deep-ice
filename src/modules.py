@@ -10,7 +10,16 @@ from graphnet.utilities.config import save_model_config
 from pytorch_lightning import LightningModule
 from torch import LongTensor, Tensor
 from torch_geometric.data import Data
-from torch_geometric.nn import EdgeConv, GATv2Conv, GINEConv, GPSConv, GravNetConv, aggr
+from torch_geometric.nn import (
+    EdgeConv,
+    GATConv,
+    GATv2Conv,
+    GINEConv,
+    GPSConv,
+    GravNetConv,
+    aggr,
+    SuperGATConv,
+)
 from torch_geometric.nn.pool import knn_graph, radius_graph
 from torch_geometric.typing import Adj
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
@@ -395,32 +404,106 @@ class DynEdge(GNN):
 
 
 # https://colab.research.google.com/github/AntonioLonga/PytorchGeometricTutorial/blob/main/Tutorial3/Tutorial3.ipynb#scrollTo=YAiLrvGcz-6l
+# class GraphAttentionNetwork(torch.nn.Module):
+#     def __init__(self, nb_inputs=8, nb_outputs=128):
+#         super(GraphAttentionNetwork, self).__init__()
+#         self.nb_inputs = nb_inputs
+#         self.nb_outputs = nb_outputs
+#         self.hid = 128
+#         self.in_head = 4
+#         self.out_head = 1
+
+#         self.dropout = 0.5
+
+#         self.conv1 = GATConv(
+#             nb_inputs, self.hid, heads=self.in_head, dropout=self.dropout
+#         )
+#         self.conv2 = GATConv(
+#             self.hid * self.in_head,
+#             self.hid,
+#             heads=self.in_head,
+#             dropout=self.dropout,
+#         )
+#         self.conv3 = GATConv(
+#             self.hid * self.in_head,
+#             nb_outputs,
+#             concat=False,
+#             heads=self.out_head,
+#             dropout=self.dropout,
+#         )
+
+#         self.global_pooling = aggr.MultiAggregation(
+#             [
+#                 "min",
+#                 "max",
+#                 "mean",
+#                 "sum",
+#                 "std",
+#                 "median",
+#             ],
+#         )
+
+#         self.head = nn.Sequential(
+#             nn.GELU(),
+#             nn.Linear(self.nb_outputs * 6, self.nb_outputs),
+#         )
+
+#     def forward(self, data):
+#         x, edge_index, batch = data.x, data.edge_index, data.batch
+
+#         # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+#         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+
+#         x = F.dropout(x, p=self.dropout)
+#         x = self.conv1(x, edge_index)
+
+#         # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+#         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+
+#         x = F.gelu(x)
+#         x = F.dropout(x, p=self.dropout)
+#         x = self.conv2(x, edge_index)
+
+#         # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+#         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+
+#         x = F.gelu(x)
+#         x = F.dropout(x, p=self.dropout)
+#         x = self.conv3(x, edge_index)
+
+#         x = self.global_pooling(x, batch)
+
+#         x = self.head(x)
+
+#         return x
+
+
+# https://github.com/pyg-team/pytorch_geometric/blob/master/examples/super_gat.py
 class GraphAttentionNetwork(torch.nn.Module):
     def __init__(self, nb_inputs=8, nb_outputs=128):
-        super(GraphAttentionNetwork, self).__init__()
+        super().__init__()
+
         self.nb_inputs = nb_inputs
         self.nb_outputs = nb_outputs
-        self.hid = 128
-        self.in_head = 4
-        self.out_head = 1
 
-        self.dropout = 0.5
-
-        self.conv1 = GATv2Conv(
-            nb_inputs, self.hid, heads=self.in_head, dropout=self.dropout
+        self.conv1 = SuperGATConv(
+            nb_inputs,
+            8,
+            heads=8,
+            dropout=0.6,
+            attention_type="MX",
+            edge_sample_ratio=0.8,
+            is_undirected=True,
         )
-        self.conv2 = GATv2Conv(
-            self.hid * self.in_head,
-            self.hid,
-            heads=self.in_head,
-            dropout=self.dropout,
-        )
-        self.conv3 = GATv2Conv(
-            self.hid * self.in_head,
+        self.conv2 = SuperGATConv(
+            8 * 8,
             nb_outputs,
+            heads=8,
             concat=False,
-            heads=self.out_head,
-            dropout=self.dropout,
+            dropout=0.6,
+            attention_type="MX",
+            edge_sample_ratio=0.8,
+            is_undirected=True,
         )
 
         self.global_pooling = aggr.MultiAggregation(
@@ -442,30 +525,14 @@ class GraphAttentionNetwork(torch.nn.Module):
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
 
-        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
-        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+        x = F.dropout(x, p=0.6, training=self.training)
+        x = F.elu(self.conv1(x, edge_index))
 
-        x = F.dropout(x, p=self.dropout)
-        x = self.conv1(x, edge_index)
-
-        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
-        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
-
-        x = F.gelu(x)
-        x = F.dropout(x, p=self.dropout)
-        x = self.conv2(x, edge_index)
-
-        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
-        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
-
-        x = F.gelu(x)
-        x = F.dropout(x, p=self.dropout)
-        x = self.conv3(x, edge_index)
+        x = F.dropout(x, p=0.6, training=self.training)
+        x = self.conv2(x, data.edge_index)
 
         x = self.global_pooling(x, batch)
-
         x = self.head(x)
-
         return x
 
 
@@ -549,11 +616,20 @@ class GPS(torch.nn.Module):
         return self.head(x)
 
 
-# class GravNetBlock(torch.nn.Module):
-#     def __init__(self, in_features, out_features, s, flr, k) -> None:
-#         super().__init__()
+class GravNetBlock(nn.Module):
+    def __init__(self, in_features, out_features, s, flr, k) -> None:
+        super().__init__()
+        self.conv = GravNetConv(in_features, out_features, s, flr, k)
+        self.act = nn.ReLU()
+        self.bn = nn.BatchNorm1d(out_features)
+        self.do = nn.Dropout()
 
-#         self.conv = GravNetConv(nb_inputs, hidden_channels, s, flr, k)
+    def forward(self, x, batch):
+        x = self.conv(x, batch)
+        x = self.bn(x)
+        x = self.act(x)
+        # x = self.do(x)
+        return x
 
 
 class GravNet(torch.nn.Module):
@@ -562,6 +638,7 @@ class GravNet(torch.nn.Module):
         nb_inputs: int = 8,
         nb_outputs: int = 128,
         hidden_channels: int = 512,
+        num_blocks: int = 10,
         s: int = 4,
         flr: int = 64,
         k: int = 20,
@@ -569,11 +646,15 @@ class GravNet(torch.nn.Module):
         super(GravNet, self).__init__()
         self.nb_inputs = nb_inputs
         self.nb_outputs = nb_outputs
-        self.conv1 = GravNetConv(nb_inputs, hidden_channels, s, flr, k)
-        self.conv2 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
-        self.conv3 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
-        self.conv4 = GravNetConv(hidden_channels, hidden_channels, s, flr, k)
-        self.act = nn.ReLU()
+
+        self.blocks = nn.ModuleList()
+        for n in range(num_blocks):
+            if n == 0:
+                self.blocks.append(GravNetBlock(nb_inputs, hidden_channels, s, flr, k))
+            else:
+                self.blocks.append(
+                    GravNetBlock(hidden_channels, hidden_channels, s, flr, k)
+                )
 
         self.global_pooling = aggr.MultiAggregation(
             [
@@ -586,25 +667,23 @@ class GravNet(torch.nn.Module):
             ],
         )
 
-        self.mid = nn.Linear(nb_inputs + hidden_channels * 4, hidden_channels)
+        self.mid = nn.Linear(
+            nb_inputs + hidden_channels * num_blocks, hidden_channels * 2
+        )
         self.head = nn.Linear(
-            hidden_channels * len(self.global_pooling.aggrs), nb_outputs
+            hidden_channels * 2 * len(self.global_pooling.aggrs), nb_outputs
         )
 
     def forward(self, data):
-        x0, batch = data.x, data.batch
+        x, batch = data.x, data.batch
 
-        x1 = self.conv1(x0, batch)
-        x1 = self.act(x1)
-        x2 = self.conv2(x1, batch)
-        x2 = self.act(x2)
-        x3 = self.conv3(x2, batch)
-        x3 = self.act(x3)
-        x4 = self.conv4(x3, batch)
-        x4 = self.act(x4)
+        final_cat = [x]
 
-        x = torch.cat([x0, x1, x2, x3, x4], dim=1)
+        for block in self.blocks:
+            x = block(x, batch)
+            final_cat.append(x)
+
+        x = torch.cat(final_cat, dim=1)
         x = self.mid(x)
-        x = self.global_pooling(x4, batch)
-
+        x = self.global_pooling(x, batch)
         return self.head(x)
