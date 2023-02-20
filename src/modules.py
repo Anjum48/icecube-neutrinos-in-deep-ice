@@ -622,13 +622,13 @@ class GravNetBlock(nn.Module):
         self.conv = GravNetConv(in_features, out_features, s, flr, k)
         self.act = nn.ReLU()
         self.bn = nn.BatchNorm1d(out_features)
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, x, batch):
         x = self.conv(x, batch)
         # x = self.bn(x)
         x = self.act(x)
-        x = self.dropout(x)
+        # x = self.dropout(x)
         return x
 
 
