@@ -599,7 +599,7 @@ class GPS(torch.nn.Module):
 
         self.head = nn.Sequential(
             nn.GELU(),
-            nn.Linear(channels * 6, self.nb_outputs),
+            nn.Linear(channels * len(self.global_pooling.aggrs), self.nb_outputs),
         )
 
     def forward(self, data):
