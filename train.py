@@ -26,7 +26,8 @@ def get_num_steps(cfg, dm):
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def run_fold(cfg: DictConfig):
     pl.seed_everything(cfg.run.seed + cfg.run.fold, workers=True)
-    resume, run_id = resume_helper(cfg)
+    # resume, run_id = resume_helper(cfg)
+    resume, run_id = None, None
 
     monitor_list = [("loss/valid", "min", "loss"), ("metric", "min", "metric")]
 
@@ -39,7 +40,7 @@ def run_fold(cfg: DictConfig):
         wandb=cfg.run.logging,
         patience=None,
         run_id=run_id,
-        save_weights_only=True,
+        save_weights_only=False,
     )
 
     callbacks["metric_summary"] = LogSummaryCallback("loss/valid", "min")

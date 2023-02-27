@@ -105,7 +105,7 @@ def prepare_args(config_path=CONFIG_PATH, default_config="default_run"):
     return args
 
 
-def resume_helper(args):
+def resume_helper(timestamp=None, model_name=None, fold=1, wandb_id=None):
     """
     To resume a run, add this to the YAML/args:
 
@@ -118,14 +118,14 @@ def resume_helper(args):
     Returns:
         [type]: [description]
     """
-    if hasattr(args, "checkpoint"):
-        paths = (
-            OUTPUT_PATH / args.checkpoint / args.encoder / f"fold_{args.fold - 1}"
-        ).glob("*.*loss.ckpt")
+    if timestamp is not None:
+        paths = (OUTPUT_PATH / timestamp / model_name / f"fold_{fold - 1}").glob(
+            "*.*loss.ckpt"
+        )
         resume = list(paths)[0]
 
-        if hasattr(args, "wandb_id"):
-            run_id = args.wandb_id
+        if wandb_id is not None:
+            run_id = wandb_id
         else:
             print("No wandb_id provided. Logging as new run")
             run_id = None

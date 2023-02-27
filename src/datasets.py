@@ -108,9 +108,10 @@ class IceCubeDataset(Dataset):
         # data.event_id = eid
 
         # Add ice transparency data
-        z = data.x[:, 2].numpy()
-        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
-        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+        scattering = torch.tensor(
+            self.f_scattering(data.x[:, 2].numpy()), dtype=torch.float32
+        ).view(-1, 1)
+        # absorption = torch.tensor(self.f_absorption(data.x[:, 2].numpy()), dtype=torch.float32).view(-1, 1)
 
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
