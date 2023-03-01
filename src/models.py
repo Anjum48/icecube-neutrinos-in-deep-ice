@@ -12,6 +12,7 @@ from torch_geometric.data import Batch
 from src.losses import angular_dist_score
 from src.modules import DynEdge, GraphAttentionNetwork, GPS, GravNet
 from src.utils import add_weight_decay
+
 # from src.lion_pytorch import Lion
 
 
@@ -21,6 +22,7 @@ class IceCubeModel(pl.LightningModule):
         model_name: str = "DynEdge",
         learning_rate: float = 0.001,
         weight_decay: float = 0.01,
+        eps: float = 1e-8,
         warmup: float = 0.0,
         T_max: int = 1000,
         nb_inputs: int = 8,
@@ -117,20 +119,30 @@ class IceCubeModel(pl.LightningModule):
         return output
 
     def validation_epoch_end(self, outputs):
-        loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
-        val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
-        metric = torch.stack([x["metric"] for x in outputs]).mean()
+        if len(outputs) > 0:
+            loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
+            val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
+            metric = torch.stack([x["metric"] for x in outputs]).mean()
 
-        self.log_dict(
-            {"loss/valid": loss_val, "metric": metric},
-            prog_bar=True,
-            sync_dist=True,
-        )
-        self.log_dict(
-            {"loss/valid_cos": val_loss_cos},
-            prog_bar=False,
-            sync_dist=True,
-        )
+            self.log_dict(
+                {"loss/valid": loss_val, "metric": metric},
+                prog_bar=True,
+                sync_dist=True,
+            )
+            self.log_dict(
+                {"loss/valid_cos": val_loss_cos},
+                prog_bar=False,
+                sync_dist=True,
+            )
+        else:
+            self.log_dict(
+                {
+                    "loss/valid": torch.tensor(10.0, dtype=torch.float32),
+                    "metric": torch.tensor(10.0, dtype=torch.float32),
+                },
+                prog_bar=True,
+                sync_dist=True,
+            )
 
     def configure_optimizers(self):
         parameters = add_weight_decay(
@@ -139,7 +151,9 @@ class IceCubeModel(pl.LightningModule):
             skip_list=["bias", "LayerNorm.bias"],  # , "LayerNorm.weight"],
         )
 
-        opt = torch.optim.AdamW(parameters, lr=self.hparams.learning_rate)
+        opt = torch.optim.AdamW(
+            parameters, lr=self.hparams.learning_rate, eps=self.hparams.eps
+        )
         # opt = Lion(parameters, lr=self.hparams.learning_rate)
 
         sch = get_cosine_schedule_with_warmup(
