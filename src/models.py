@@ -81,14 +81,14 @@ class IceCubeModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         pred_xyzk = self.forward(batch)
-        pred_angles = self.xyz_to_angles(pred_xyzk)
+        # pred_angles = self.xyz_to_angles(pred_xyzk)
 
         target_angles = batch.y.reshape(-1, 2)
         target_xyz = self.angles_to_xyz(target_angles)
 
-        loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
+        loss_vmf = self.loss_fn_vmf(pred_xyzk, target_xyz)
         loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
-        loss += loss_cos
+        loss = loss_vmf + loss_cos
 
         self.log_dict({"loss/train_step": loss})
         return {"loss": loss}
@@ -104,9 +104,9 @@ class IceCubeModel(pl.LightningModule):
         target_angles = batch.y.reshape(-1, 2)
         target_xyz = self.angles_to_xyz(target_angles)
 
-        loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
+        loss_vmf = self.loss_fn_vmf(pred_xyzk, target_xyz)
         loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
-        loss += loss_cos
+        loss = loss_vmf + loss_cos
 
         metric = angular_dist_score(pred_angles, target_angles)
 
@@ -114,6 +114,7 @@ class IceCubeModel(pl.LightningModule):
             "val_loss": loss,
             "metric": metric,
             "val_loss_cos": loss_cos,
+            "val_loss_vmf": loss_vmf,
         }
 
         return output
