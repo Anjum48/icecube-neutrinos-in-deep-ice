@@ -37,7 +37,8 @@ else:
         "/kaggle/input/pytorchgeometric/torch_scatter-2.1.0-cp37-cp37m-linux_x86_64.whl",
         "/kaggle/input/pytorchgeometric/torch_sparse-0.6.16-cp37-cp37m-linux_x86_64.whl",
         "/kaggle/input/pytorchgeometric/torch_spline_conv-1.2.1-cp37-cp37m-linux_x86_64.whl",
-        "/kaggle/input/pytorchgeometric/torch_geometric-2.2.0-py3-none-any.whl",
+        # "/kaggle/input/pytorchgeometric/torch_geometric-2.2.0-py3-none-any.whl",
+        "/kaggle/input/pytorchgeometric/pyg_nightly-2.3.0.dev20230302-py3-none-any.whl",
         "/kaggle/input/pytorchgeometric/ruamel.yaml-0.17.21-py3-none-any.whl",
     ]
 
@@ -58,9 +59,10 @@ from graphnet.models.gnn.gnn import GNN
 from graphnet.models.utils import calculate_xyzt_homophily
 from graphnet.utilities.config import save_model_config
 from torch_geometric.data import Data
-from torch_geometric.nn import EdgeConv
+from torch_geometric.nn import EdgeConv, GINEConv, GPSConv, aggr
 from torch_geometric.nn.pool import knn_graph
 from torch_geometric.typing import Adj
+import torch_geometric.transforms as T
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
 
 GLOBAL_POOLINGS = {
@@ -83,7 +85,8 @@ class IceCubeModel(pl.LightningModule):
         model_name: str = "DynEdge",
         learning_rate: float = 0.001,
         weight_decay: float = 0.01,
-        warmup: float = 0.1,
+        eps: float = 1e-8,
+        warmup: float = 0.0,
         T_max: int = 1000,
         nb_inputs: int = 8,
         nearest_neighbours: int = 8,
@@ -102,10 +105,12 @@ class IceCubeModel(pl.LightningModule):
                 global_pooling_schemes=["min", "max", "mean", "sum"],
                 features_subset=slice(0, 4),  # NN search using xyzt
             )
-        # elif model_name == "GPS":
-        #     self.model = GPS(channels=128, num_layers=10, dropout=0.4)
+        elif model_name == "GPS":
+            self.model = GPS(channels=128, num_layers=7, dropout=0.5, heads=4)
         # elif model_name == "GAT":
         #     self.model = GraphAttentionNetwork()
+        # elif model_name == "GravNet":
+        #     self.model = GravNet()
 
         self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
@@ -139,14 +144,14 @@ class IceCubeModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         pred_xyzk = self.forward(batch)
-        pred_angles = self.xyz_to_angles(pred_xyzk)
+        # pred_angles = self.xyz_to_angles(pred_xyzk)
 
         target_angles = batch.y.reshape(-1, 2)
         target_xyz = self.angles_to_xyz(target_angles)
 
-        loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
+        loss_vmf = self.loss_fn_vmf(pred_xyzk, target_xyz)
         loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
-        loss += loss_cos
+        loss = loss_vmf + loss_cos
 
         self.log_dict({"loss/train_step": loss})
         return {"loss": loss}
@@ -162,9 +167,9 @@ class IceCubeModel(pl.LightningModule):
         target_angles = batch.y.reshape(-1, 2)
         target_xyz = self.angles_to_xyz(target_angles)
 
-        loss = self.loss_fn_vmf(pred_xyzk, target_xyz)
+        loss_vmf = self.loss_fn_vmf(pred_xyzk, target_xyz)
         loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
-        loss += loss_cos
+        loss = loss_vmf + loss_cos
 
         metric = angular_dist_score(pred_angles, target_angles)
 
@@ -172,25 +177,36 @@ class IceCubeModel(pl.LightningModule):
             "val_loss": loss,
             "metric": metric,
             "val_loss_cos": loss_cos,
+            "val_loss_vmf": loss_vmf,
         }
 
         return output
 
     def validation_epoch_end(self, outputs):
-        loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
-        val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
-        metric = torch.stack([x["metric"] for x in outputs]).mean()
+        if len(outputs) > 0:
+            loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
+            val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
+            metric = torch.stack([x["metric"] for x in outputs]).mean()
 
-        self.log_dict(
-            {"loss/valid": loss_val, "metric": metric},
-            prog_bar=True,
-            sync_dist=True,
-        )
-        self.log_dict(
-            {"loss/valid_cos": val_loss_cos},
-            prog_bar=False,
-            sync_dist=True,
-        )
+            self.log_dict(
+                {"loss/valid": loss_val, "metric": metric},
+                prog_bar=True,
+                sync_dist=True,
+            )
+            self.log_dict(
+                {"loss/valid_cos": val_loss_cos},
+                prog_bar=False,
+                sync_dist=True,
+            )
+        else:
+            self.log_dict(
+                {
+                    "loss/valid": torch.tensor(10.0, dtype=torch.float32),
+                    "metric": torch.tensor(10.0, dtype=torch.float32),
+                },
+                prog_bar=True,
+                sync_dist=True,
+            )
 
     def configure_optimizers(self):
         parameters = add_weight_decay(
@@ -199,12 +215,14 @@ class IceCubeModel(pl.LightningModule):
             skip_list=["bias", "LayerNorm.bias"],  # , "LayerNorm.weight"],
         )
 
-        opt = torch.optim.AdamW(parameters, lr=self.hparams.learning_rate)
+        opt = torch.optim.AdamW(
+            parameters, lr=self.hparams.learning_rate, eps=self.hparams.eps
+        )
+        # opt = Lion(parameters, lr=self.hparams.learning_rate)
 
         sch = get_cosine_schedule_with_warmup(
             opt,
-            # num_warmup_steps=int(0.1 * self.hparams.T_max),
-            num_warmup_steps=int(0 * self.hparams.T_max),
+            num_warmup_steps=int(self.hparams.warmup * self.hparams.T_max),
             num_training_steps=self.hparams.T_max,
             num_cycles=0.5,  # 1,
             last_epoch=-1,
@@ -569,6 +587,72 @@ class DynEdge(GNN):
         return x
 
 
+class GPS(torch.nn.Module):
+    def __init__(
+        self,
+        nb_inputs: int = 8,
+        nb_outputs: int = 128,
+        channels: int = 64,
+        num_layers: int = 8,
+        walk_length: int = 20,
+        heads: int = 4,
+        dropout: float = 0.5,
+    ):
+        super().__init__()
+
+        self.nb_inputs = nb_inputs
+        self.nb_outputs = nb_outputs
+
+        self.node_emb = nn.Linear(self.nb_inputs, channels, bias=False)
+        self.edge_emb = nn.Linear(2, channels, bias=False)  # Edge distance & delta_t
+        self.pe_lin = nn.Linear(walk_length, channels, bias=False)
+
+        self.pe_transform = T.AddRandomWalkPE(walk_length=walk_length, attr_name="pe")
+
+        self.convs = nn.ModuleList()
+        for _ in range(num_layers):
+            net = nn.Sequential(
+                nn.Linear(channels, channels, bias=False),
+                nn.GELU(),
+                nn.Linear(channels, channels, bias=False),
+            )
+            conv = GPSConv(
+                channels,
+                GINEConv(net),
+                heads=heads,
+                attn_dropout=dropout,
+                act="gelu",
+            )
+            self.convs.append(conv)
+
+        self.global_pooling = aggr.MultiAggregation(
+            [
+                "min",
+                "max",
+                "mean",
+                "sum",
+            ],
+        )
+
+        self.head = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(channels * len(self.global_pooling.aggrs), self.nb_outputs),
+        )
+
+    def forward(self, data):
+        data = self.pe_transform(data)
+        x, edge_index, batch = data.x, data.edge_index, data.batch
+
+        x = self.node_emb(x.squeeze(-1)) + self.pe_lin(data.pe)
+        edge_attr = self.edge_emb(data.edge_attr)
+
+        for conv in self.convs:
+            x = conv(x, edge_index, batch, edge_attr=edge_attr)
+
+        x = self.global_pooling(x, batch)
+        return self.head(x)
+
+
 # utils.py
 def add_weight_decay(
     model,
@@ -651,14 +735,25 @@ def ice_transparency(data_path, datum=1950):
     df = pd.read_csv(data_path, delim_whitespace=True)
     df["z"] = df["depth"] - datum
     df["z_norm"] = df["z"] / 500
-    df[["scattering_len_norm", "absorption_len_norm"]] = RobustScaler().fit_transform(
-        df[["scattering_len", "absorption_len"]]
-    )
+
+    # From RobustScaler(). See ice_transparency.ipynb
+    center = np.array([32.4, 111.8])
+    scale = np.array([27.175, 89.325])
+    features = ["scattering_len", "absorption_len"]
+
+    df[features] = (df[features] - center) / scale
 
     # These are both roughly equivalent after scaling
-    f_scattering = interp1d(df["z_norm"], df["scattering_len_norm"])
-    f_absorption = interp1d(df["z_norm"], df["absorption_len_norm"])
+    f_scattering = interp1d(df["z_norm"], df["scattering_len"])
+    f_absorption = interp1d(df["z_norm"], df["absorption_len"])
     return f_scattering, f_absorption
+
+
+def calculate_edge_attributes(d):
+    dist = (d.x[d.edge_index[0], :3] - d.x[d.edge_index[1], :3]).sum(-1).pow(2)
+    delta_t = (d.x[d.edge_index[0], 3] - d.x[d.edge_index[1], 3]).abs()
+    d.edge_attr = torch.stack([dist, delta_t], dim=1)
+    return d
 
 
 class IceCubeSubmissionDataset(Dataset):
@@ -815,6 +910,22 @@ def infer(model, dataset, batch_size=32, device="cuda"):
     return torch.cat(predictions, 0)
 
 
+def circular_mean(preds):
+    azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
+
+    for p in preds:
+        a_out, z_out = p[:, 0], p[:, 1]
+        azi_out_sin += torch.sin(a_out)
+        azi_out_cos += torch.cos(a_out)
+        zen_out += z_out
+
+    # https://en.wikipedia.org/wiki/Circular_mean
+    azi_out = torch.atan2(azi_out_sin, azi_out_cos)
+    zen_out /= len(preds)
+
+    return torch.stack([azi_out, zen_out], dim=1)
+
+
 def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test"):
     mpaths = []
     for p in dataset_paths:
@@ -831,34 +942,41 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
         INPUT_PATH / f"{mode}_meta.parquet", columns=["batch_id", "event_id"]
     ).astype(_dtype)
     batch_ids = meta["batch_id"].unique()
-    output = 0
+    output = []
 
     if mode == "train":
         batch_ids = batch_ids[:6]
 
-    # for i, group in enumerate(mpaths):
-    #     for j, p in enumerate(group):
+    for i, group in enumerate(mpaths):
+        for j, p in enumerate(group):
 
-    p = mpaths[0][0]
-    model = IceCubeModel.load_from_checkpoint(p, strict=False)
-    pre_transform = KNNGraphBuilder(nb_nearest_neighbours=8)
+            model = IceCubeModel.load_from_checkpoint(p, strict=False)
 
-    batch_preds = []
-    for b in batch_ids:
-        event_ids = meta[meta["batch_id"] == b]["event_id"].tolist()
-        dataset = IceCubeSubmissionDataset(
-            b, event_ids, sensors, mode=mode, pre_transform=pre_transform
-        )
-        batch_preds.append(infer(model, dataset, device=device, batch_size=1024))
-        print("Finished batch", b)
+            pre_transform = T.Compose(
+                [
+                    KNNGraphBuilder(nb_nearest_neighbours=8, columns=[0, 1, 2, 3]),
+                    # RadialGraphBuilder(radius=160 / 500, columns=[0, 1, 2, 3]),
+                    calculate_edge_attributes,
+                ]
+            )
 
-        if mode == "train" and b == 6:
-            break
+            batch_preds = []
+            for b in batch_ids:
+                event_ids = meta[meta["batch_id"] == b]["event_id"].tolist()
+                dataset = IceCubeSubmissionDataset(
+                    b, event_ids, sensors, mode=mode, pre_transform=pre_transform
+                )
+                batch_preds.append(
+                    infer(model, dataset, device=device, batch_size=1024)
+                )
+                print("Finished batch", b, model.hparams.model_name)
 
-    output += torch.cat(batch_preds, 0)
+                if mode == "train" and b == 6:
+                    break
 
-    # After looping through folds
-    output /= num_models
+            output.append(torch.cat(batch_preds, 0))
+
+    output = circular_mean(output)
 
     event_id_labels = []
     for b in batch_ids:
@@ -878,7 +996,8 @@ if __name__ == "__main__":
     pl.seed_everything(48, workers=True)
 
     model_folders = [
-        "20230206-080858",
+        "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
+        "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
     ]
 
     if KERNEL:

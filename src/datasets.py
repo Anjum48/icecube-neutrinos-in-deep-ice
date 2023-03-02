@@ -8,7 +8,6 @@ import torch
 from graphnet.models.graph_builders import KNNGraphBuilder, RadialGraphBuilder
 from scipy.interpolate import interp1d
 from sklearn.model_selection import StratifiedKFold
-from sklearn.preprocessing import RobustScaler
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from torchmetrics.functional import pairwise_euclidean_distance
@@ -36,13 +35,17 @@ def ice_transparency(data_path, datum=1950):
     df = pd.read_csv(data_path, delim_whitespace=True)
     df["z"] = df["depth"] - datum
     df["z_norm"] = df["z"] / 500
-    df[["scattering_len_norm", "absorption_len_norm"]] = RobustScaler().fit_transform(
-        df[["scattering_len", "absorption_len"]]
-    )
+
+    # From RobustScaler(). See ice_transparency.ipynb
+    center = np.array([32.4, 111.8])
+    scale = np.array([27.175, 89.325])
+    features = ["scattering_len", "absorption_len"]
+
+    df[features] = (df[features] - center) / scale
 
     # These are both roughly equivalent after scaling
-    f_scattering = interp1d(df["z_norm"], df["scattering_len_norm"])
-    f_absorption = interp1d(df["z_norm"], df["absorption_len_norm"])
+    f_scattering = interp1d(df["z_norm"], df["scattering_len"])
+    f_absorption = interp1d(df["z_norm"], df["absorption_len"])
     return f_scattering, f_absorption
 
 
@@ -144,7 +147,10 @@ class IceCubeDataset(Dataset):
 
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
-            data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
+            perm = torch.randperm(data.x.size(0))
+            idx = perm[: self.pulse_limit]
+            data.x = data.x[idx]
+
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
         return data
@@ -271,7 +277,10 @@ class IceCubeSubmissionDataset(Dataset):
 
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
-            data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
+            perm = torch.randperm(data.x.size(0))
+            idx = perm[: self.pulse_limit]
+            data.x = data.x[idx]
+
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
         return data
@@ -362,7 +371,7 @@ class IceCubeDataModule(pl.LightningDataModule):
                 KNNGraphBuilder(
                     nb_nearest_neighbours=nearest_neighbours, columns=[0, 1, 2, 3]
                 ),
-                # RadialGraphBuilder(radius=160 / 500),
+                # RadialGraphBuilder(radius=160 / 500, columns=[0, 1, 2, 3]),
                 calculate_edge_attributes,
             ]
         )
