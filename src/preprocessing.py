@@ -10,10 +10,11 @@ import numpy as np
 import pandas as pd
 import torch
 from joblib import Parallel, delayed
+from scipy.interpolate import interp1d
 from torch_geometric.data import Data
 from tqdm import tqdm
 
-from src.config import INPUT_PATH
+from src.config import INPUT_PATH, INPUT_PATH_ALT
 
 
 @contextlib.contextmanager
@@ -32,6 +33,26 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.BatchCompletionCallBack = old_batch_callback
         tqdm_object.close()
+
+
+def ice_transparency(datum=1950):
+    # Data from page 31 of https://arxiv.org/pdf/1301.5361.pdf
+    # Datum is from footnote 8 of page 29
+    df = pd.read_csv(INPUT_PATH / "ice_transparency.txt", delim_whitespace=True)
+    df["z"] = df["depth"] - datum
+    df["z_norm"] = df["z"] / 500
+
+    # From RobustScaler(). See ice_transparency.ipynb
+    center = np.array([32.4, 111.8])
+    scale = np.array([27.175, 89.325])
+    features = ["scattering_len", "absorption_len"]
+
+    df[features] = (df[features] - center) / scale
+
+    # These are both roughly equivalent after scaling
+    f_scattering = interp1d(df["z_norm"], df["scattering_len"])
+    f_absorption = interp1d(df["z_norm"], df["absorption_len"])
+    return f_scattering, f_absorption
 
 
 def prepare_sensors():
@@ -64,6 +85,10 @@ def prepare_sensors():
     sensors["qe"] -= 1.25
     sensors["qe"] /= 0.25
 
+    f_scattering, f_absorption = ice_transparency()
+    sensors["scattering_len"] = f_scattering(sensors["z"])
+    sensors["absorption_len"] = f_absorption(sensors["z"])
+
     return sensors
 
 
@@ -75,14 +100,26 @@ def make_meta_parts():
         part.to_parquet(INPUT_PATH / "train_meta_parts" / f"batch_{i+1}.parquet")
 
 
-def process_event(event, batch, event_id, target):
+def process_event(event, batch, event_id, target, output_folder):
     event = pd.merge(event, sensors, on="sensor_id")
 
-    x = event[["x", "y", "z", "time", "charge", "qe", "auxiliary"]].values
+    features = [
+        "x",
+        "y",
+        "z",
+        "time",
+        "charge",
+        "qe",
+        "auxiliary",
+        "scattering_len",
+        "absorption_len",
+    ]
+
+    x = event[features].values
     x = torch.tensor(x, dtype=torch.float32)
     y = torch.tensor(target, dtype=torch.float32)
     data = Data(x=x, y=y, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
-    torch.save(data, INPUT_PATH / "train_events" / batch / f"event_{event_id}.pt")
+    torch.save(data, output_folder / "train_events" / batch / f"event_{event_id}.pt")
 
 
 def process_file(batch_id):
@@ -101,9 +138,14 @@ def process_file(batch_id):
         .to_dict(orient="index")
     )
 
+    if batch_id in range(501, 601):
+        output_folder = INPUT_PATH_ALT
+    else:
+        output_folder = INPUT_PATH
+
     for event_id in df.index.unique():
         target = list(targets[event_id].values())
-        process_event(df.loc[event_id], batch, event_id, target)
+        process_event(df.loc[event_id], batch, event_id, target, output_folder)
 
 
 if __name__ == "__main__":
