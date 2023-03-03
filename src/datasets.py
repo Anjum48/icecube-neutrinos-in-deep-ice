@@ -394,7 +394,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             drop_last=True,
-            # pin_memory=True,
+            pin_memory=True,
         )
 
     def val_dataloader(self):
@@ -402,7 +402,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.clr_valid,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
-            # pin_memory=True,
+            pin_memory=True,
         )
 
     def predict_dataloader(self):

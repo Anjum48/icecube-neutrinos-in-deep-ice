@@ -13,8 +13,6 @@ from src.losses import angular_dist_score
 from src.modules import DynEdge, GraphAttentionNetwork, GPS, GravNet
 from src.utils import add_weight_decay
 
-# from src.lion_pytorch import Lion
-
 
 class IceCubeModel(pl.LightningModule):
     def __init__(
@@ -90,12 +88,15 @@ class IceCubeModel(pl.LightningModule):
         loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
         loss = loss_vmf + loss_cos
 
-        self.log_dict({"loss/train_step": loss})
+        self.log(
+            "loss/train",
+            loss,
+            on_epoch=True,
+            on_step=True,
+            sync_dist=True,
+            batch_size=self.hparams.batch_size,
+        )
         return {"loss": loss}
-
-    def training_epoch_end(self, training_step_outputs):
-        avg_loss = torch.stack([x["loss"] for x in training_step_outputs]).mean()
-        self.log("loss/train", avg_loss, sync_dist=True)
 
     def validation_step(self, batch, batch_idx):
         pred_xyzk = self.forward(batch)
@@ -110,40 +111,24 @@ class IceCubeModel(pl.LightningModule):
 
         metric = angular_dist_score(pred_angles, target_angles)
 
-        output = {
-            "val_loss": loss,
-            "metric": metric,
-            "val_loss_cos": loss_cos,
-            "val_loss_vmf": loss_vmf,
-        }
-
-        return output
-
-    def validation_epoch_end(self, outputs):
-        if len(outputs) > 0:
-            loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
-            val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
-            metric = torch.stack([x["metric"] for x in outputs]).mean()
-
-            self.log_dict(
-                {"loss/valid": loss_val, "metric": metric},
-                prog_bar=True,
-                sync_dist=True,
-            )
-            self.log_dict(
-                {"loss/valid_cos": val_loss_cos},
-                prog_bar=False,
-                sync_dist=True,
-            )
-        else:
-            self.log_dict(
-                {
-                    "loss/valid": torch.tensor(10.0, dtype=torch.float32),
-                    "metric": torch.tensor(10.0, dtype=torch.float32),
-                },
-                prog_bar=True,
-                sync_dist=True,
-            )
+        self.log(
+            "metric",
+            metric,
+            prog_bar=True,
+            sync_dist=True,
+            on_epoch=True,
+            batch_size=self.hparams.batch_size,
+        )
+        self.log_dict(
+            {
+                "loss/valid": loss,
+                "loss/valid_cos": loss_cos,
+                "loss/valid_vmf": loss_vmf,
+            },
+            sync_dist=True,
+            on_epoch=True,
+            batch_size=self.hparams.batch_size,
+        )
 
     def configure_optimizers(self):
         parameters = add_weight_decay(
