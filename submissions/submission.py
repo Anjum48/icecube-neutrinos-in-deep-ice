@@ -910,22 +910,6 @@ def infer(model, dataset, batch_size=32, device="cuda"):
     return torch.cat(predictions, 0)
 
 
-def circular_mean(preds):
-    azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
-
-    for p in preds:
-        a_out, z_out = p[:, 0], p[:, 1]
-        azi_out_sin += torch.sin(a_out)
-        azi_out_cos += torch.cos(a_out)
-        zen_out += z_out
-
-    # https://en.wikipedia.org/wiki/Circular_mean
-    azi_out = torch.atan2(azi_out_sin, azi_out_cos)
-    zen_out /= len(preds)
-
-    return torch.stack([azi_out, zen_out], dim=1)
-
-
 def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test"):
     mpaths = []
     for p in dataset_paths:
@@ -942,7 +926,8 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
         INPUT_PATH / f"{mode}_meta.parquet", columns=["batch_id", "event_id"]
     ).astype(_dtype)
     batch_ids = meta["batch_id"].unique()
-    output = []
+
+    azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
 
     if mode == "train":
         batch_ids = batch_ids[:6]
@@ -974,9 +959,14 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
                 if mode == "train" and b == 6:
                     break
 
-            output.append(torch.cat(batch_preds, 0))
+            model_output = torch.cat(batch_preds, 0)
+            azi_out_sin += torch.sin(model_output[:, 0])
+            azi_out_cos += torch.cos(model_output[:, 0])
+            zen_out += model_output[:, 1]
 
-    output = circular_mean(output)
+    azi_out = torch.atan2(azi_out_sin, azi_out_cos)
+    zen_out /= num_models
+    output = torch.stack([azi_out, zen_out], dim=1)
 
     event_id_labels = []
     for b in batch_ids:
