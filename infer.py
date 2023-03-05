@@ -22,8 +22,13 @@ def infer(model, loader, device="cuda"):
     with torch.no_grad():
         for batch_n, batch in enumerate(tqdm(loader)):
             batch = batch.to(device)
+
+            # pred_xyzk = model(batch)
+            # pred_angles = model.xyz_to_angles(pred_xyzk)
+
             pred_azi, pred_zen = model(batch)
             pred_angles = torch.stack([pred_azi, pred_zen], dim=1)
+
             predictions.append(pred_angles.cpu())
             target.append(batch.y.reshape(-1, 2).cpu())
 
@@ -102,8 +107,9 @@ if __name__ == "__main__":
     )
 
     folders = [
-        "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
-        "20230227-083426",  # 0.99082 GPS (6 epoch). LB:
+        # "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
+        # "20230227-083426",  # 0.99082 GPS (6 epoch). LB:
+        "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
     ]
     # Ensemble: 0.98652
 

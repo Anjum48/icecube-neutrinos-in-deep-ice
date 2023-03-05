@@ -83,18 +83,15 @@ class IceCubeDataset(Dataset):
         self, df, pulse_limit=256, transform=None, pre_transform=None, pre_filter=None
     ):
         super().__init__(transform, pre_transform, pre_filter)
-        self.df = df  # DataFrame containing batch_id & event_id
+        # Polars DataFrame containing batch_id & event_id. Store as list
+        self.df = df.rows()
         self.pulse_limit = pulse_limit
-        self.f_scattering, self.f_absorption = ice_transparency(
-            INPUT_PATH / "ice_transparency.txt"
-        )
 
     def len(self):
         return len(self.df)
 
     def get(self, idx):
-        bid, eid = self.df[idx, ["batch_id", "event_id"]]
-        bid, eid = bid[0], eid[0]
+        bid, eid = self.df[idx]
 
         # Batches 501-600 are on /mnt/storage due to the inode limitation
         # on /mnt/storage_dimm2
@@ -107,14 +104,9 @@ class IceCubeDataset(Dataset):
             file_path = INPUT_PATH / "train_events" / f"batch_{bid}" / f"event_{eid}.pt"
 
         data = torch.load(file_path)
-        # data.batch_id = bid
-        # data.event_id = eid
 
-        # Add ice transparency data
-        scattering = torch.tensor(
-            self.f_scattering(data.x[:, 2].numpy()), dtype=torch.float32
-        ).view(-1, 1)
-        # absorption = torch.tensor(self.f_absorption(data.x[:, 2].numpy()), dtype=torch.float32).view(-1, 1)
+        # Drop the absorption data as its essentially the same as scattering
+        data.x = data.x[:, :-1]
 
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
@@ -124,27 +116,6 @@ class IceCubeDataset(Dataset):
         # charge_norm = 2 * (cum_charge - c_min) / (c_max - c_min) - 1
         # t_norm = (2 * (t - t.min()) / (t.max() - t.min()) - 1).view(-1, 1)
 
-        # Distance from previous pulse - uses too much memory :(
-        # mat = pairwise_euclidean_distance(data.x[:, :3])
-        # mat = mat + torch.eye(data.n_pulses) * 1000
-        # dists = []
-
-        # for i in range(data.n_pulses):
-        #     masked_mat = mat[: i + 1, : i + 1]
-        #     if i == 0:
-        #         dists.append(0)
-        #     else:
-        #         dists.append(masked_mat[i].min())
-
-        # dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.25) / 0.25
-
-        data.x = torch.cat([data.x, scattering], dim=1)
-
-        # Only use aux = False
-        # mask = data.x[:, -1] < 0
-        # data.x = data.x[mask]
-        # data.n_pulses = torch.tensor(data.x.shape[0], dtype=torch.int32)
-
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
             perm = torch.randperm(data.x.size(0))
@@ -152,6 +123,25 @@ class IceCubeDataset(Dataset):
             data.x = data.x[idx]
 
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
+
+        # Distance from nearest previous pulse
+        # Data objects no not preserve order, so need to sort by time
+        t, indices = torch.sort(data.x[:, 3])
+        data.x = data.x[indices]
+
+        mat = pairwise_euclidean_distance(data.x[:, :3])
+        mat = mat + torch.eye(data.n_pulses) * 1000
+        dists = []
+
+        for i in range(data.n_pulses):
+            masked_mat = mat[: i + 1, : i + 1]
+            if i == 0:
+                dists.append(0)
+            else:
+                dists.append(masked_mat[i].min())
+
+        dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.5) / 0.5
+        data.x = torch.cat([data.x, dists], dim=1)
 
         return data
 
@@ -356,6 +346,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         seed: int = 48,
         folds: int = 5,
         nearest_neighbours: int = 8,
+        radius: float = 160,
         num_workers: int = 10,
         **kwargs,
     ):
@@ -371,14 +362,18 @@ class IceCubeDataModule(pl.LightningDataModule):
                 KNNGraphBuilder(
                     nb_nearest_neighbours=nearest_neighbours, columns=[0, 1, 2, 3]
                 ),
-                # RadialGraphBuilder(radius=160 / 500, columns=[0, 1, 2, 3]),
+                # RadialGraphBuilder(radius=radius / 500, columns=[0, 1, 2, 3]),
                 calculate_edge_attributes,
             ]
         )
 
     def setup(self, stage=None, fold_n: int = 0):
-        trn_df = self.df.filter(pls.col("fold") != fold_n)
-        val_df = self.df.filter(pls.col("fold") == fold_n)
+        trn_df = self.df.filter(pls.col("fold") != fold_n).select(
+            ["batch_id", "event_id"]
+        )
+        val_df = self.df.filter(pls.col("fold") == fold_n).select(
+            ["batch_id", "event_id"]
+        )
 
         # if stage == "fit" or stage is None:
         self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)

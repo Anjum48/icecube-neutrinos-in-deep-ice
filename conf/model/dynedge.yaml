@@ -7,3 +7,4 @@ learning_rate: 0.0002
 weight_decay: 0.1
 warmup: 0.0
 nearest_neighbours: 8
+# eps: 1e-5

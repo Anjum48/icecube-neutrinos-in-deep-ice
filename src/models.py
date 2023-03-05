@@ -23,7 +23,7 @@ class IceCubeModel(pl.LightningModule):
         eps: float = 1e-8,
         warmup: float = 0.0,
         T_max: int = 1000,
-        nb_inputs: int = 8,
+        nb_inputs: int = 9,
         nearest_neighbours: int = 8,
         **kwargs,
     ):
