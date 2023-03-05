@@ -273,6 +273,25 @@ class IceCubeSubmissionDataset(Dataset):
 
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
+        # Distance from nearest previous pulse
+        # Data objects no not preserve order, so need to sort by time
+        t, indices = torch.sort(data.x[:, 3])
+        data.x = data.x[indices]
+
+        mat = pairwise_euclidean_distance(data.x[:, :3])
+        mat = mat + torch.eye(data.n_pulses) * 1000
+        dists = []
+
+        for i in range(data.n_pulses):
+            masked_mat = mat[: i + 1, : i + 1]
+            if i == 0:
+                dists.append(0)
+            else:
+                dists.append(masked_mat[i].min())
+
+        dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.5) / 0.5
+        data.x = torch.cat([data.x, dists], dim=1)
+
         return data
 
 

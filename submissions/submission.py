@@ -8,11 +8,11 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from scipy.interpolate import interp1d
 from sklearn.preprocessing import RobustScaler
 from torch import LongTensor, Tensor
 from torch.utils.data import DataLoader, Dataset
+from torchmetrics.functional import pairwise_euclidean_distance
 from tqdm import tqdm
 from transformers import get_cosine_schedule_with_warmup
 
@@ -50,19 +50,18 @@ else:
 
     sys.path.append("/kaggle/input/graphnet/graphnet-main/src")
 
+import torch_geometric.transforms as T
+from graphnet.models.gnn.gnn import GNN
 from graphnet.models.graph_builders import KNNGraphBuilder
 from graphnet.models.task.reconstruction import DirectionReconstructionWithKappa
+from graphnet.models.utils import calculate_xyzt_homophily
 from graphnet.training.loss_functions import VonMisesFisher3DLoss
+from graphnet.utilities.config import save_model_config
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
-from graphnet.models.gnn.gnn import GNN
-from graphnet.models.utils import calculate_xyzt_homophily
-from graphnet.utilities.config import save_model_config
-from torch_geometric.data import Data
 from torch_geometric.nn import EdgeConv, GINEConv, GPSConv, aggr
 from torch_geometric.nn.pool import knn_graph
 from torch_geometric.typing import Adj
-import torch_geometric.transforms as T
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
 
 GLOBAL_POOLINGS = {
@@ -89,7 +88,7 @@ class IceCubeModel(pl.LightningModule):
         warmup: float = 0.0,
         T_max: int = 1000,
         nb_inputs: int = 8,
-        nearest_neighbours: int = 8,
+        nearest_neighbours: int = 9,
         **kwargs,
     ):
         super().__init__()
@@ -804,6 +803,25 @@ class IceCubeSubmissionDataset(Dataset):
             data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
+            # Distance from nearest previous pulse
+        # Data objects no not preserve order, so need to sort by time
+        t, indices = torch.sort(data.x[:, 3])
+        data.x = data.x[indices]
+
+        mat = pairwise_euclidean_distance(data.x[:, :3])
+        mat = mat + torch.eye(data.n_pulses) * 1000
+        dists = []
+
+        for i in range(data.n_pulses):
+            masked_mat = mat[: i + 1, : i + 1]
+            if i == 0:
+                dists.append(0)
+            else:
+                dists.append(masked_mat[i].min())
+
+        dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.5) / 0.5
+        data.x = torch.cat([data.x, dists], dim=1)
+
         return data
 
 
@@ -986,8 +1004,9 @@ if __name__ == "__main__":
     pl.seed_everything(48, workers=True)
 
     model_folders = [
-        "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
-        "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
+        # "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
+        # "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
+        "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
     ]
 
     if KERNEL:
