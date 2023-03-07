@@ -387,7 +387,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         folds: int = 5,
         nearest_neighbours: int = 8,
         radius: float = 160,
-        num_workers: int = 10,
+        num_workers: int = 14,
         **kwargs,
     ):
         super().__init__()
