@@ -87,8 +87,8 @@ class IceCubeModel(pl.LightningModule):
         eps: float = 1e-8,
         warmup: float = 0.0,
         T_max: int = 1000,
-        nb_inputs: int = 8,
-        nearest_neighbours: int = 9,
+        nb_inputs: int = 9,
+        nearest_neighbours: int = 8,
         **kwargs,
     ):
         super().__init__()
@@ -762,7 +762,7 @@ class IceCubeSubmissionDataset(Dataset):
         event_ids,
         sensor_df,
         mode="test",
-        pulse_limit=300,
+        pulse_limit=512,
         transform=None,
         pre_transform=None,
         pre_filter=None,
@@ -791,37 +791,43 @@ class IceCubeSubmissionDataset(Dataset):
         x = torch.tensor(x, dtype=torch.float32)
         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
 
+        # Downsample the large events
+        if data.n_pulses > self.pulse_limit:
+            perm = torch.randperm(data.x.size(0))
+            idx = perm[: self.pulse_limit]
+            data.x = data.x[idx]
+
+            data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
+
         # Add ice transparency data
         z = data.x[:, 2].numpy()
         scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
         # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
 
-        data.x = torch.cat([data.x, scattering], dim=1)
-
-        # Downsample the large events
-        if data.n_pulses > self.pulse_limit:
-            data.x = data.x[np.random.choice(data.n_pulses, self.pulse_limit)]
-            data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
-
-            # Distance from nearest previous pulse
+        # Distance from nearest previous pulse
         # Data objects no not preserve order, so need to sort by time
         t, indices = torch.sort(data.x[:, 3])
         data.x = data.x[indices]
 
         mat = pairwise_euclidean_distance(data.x[:, :3])
         mat = mat + torch.eye(data.n_pulses) * 1000
-        dists = []
+        prev = []
 
         for i in range(data.n_pulses):
-            masked_mat = mat[: i + 1, : i + 1]
             if i == 0:
-                dists.append(0)
+                prev.append([0])
+                # prev.append([0, 0])
             else:
-                dists.append(masked_mat[i].min())
+                prev.append([mat[: i + 1, i].min()])
 
-        dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.5) / 0.5
-        data.x = torch.cat([data.x, dists], dim=1)
+                # masked_mat = mat[: i + 1, i]
+                # idx = torch.argmin(masked_mat)
+                # d = (masked_mat[idx] - 0.5) / 0.5
+                # t_delta = (t[i] - t[idx] - 0.1) / 0.1
+                # prev.append([d, t_delta])
 
+        prev = torch.tensor(prev, dtype=torch.float32)
+        data.x = torch.cat([data.x, scattering, prev], dim=1)
         return data
 
 

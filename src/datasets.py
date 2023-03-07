@@ -15,6 +15,8 @@ import torch_geometric.transforms as T
 
 from src.config import INPUT_PATH, INPUT_PATH_ALT
 
+MAX_PULSES = 256
+
 
 def create_folds(data, n_splits=5, random_state=48):
     data["n_pulses"] = data["last_pulse_index"] - data["first_pulse_index"]
@@ -80,11 +82,16 @@ def calculate_edge_attributes(d):
 
 class IceCubeDataset(Dataset):
     def __init__(
-        self, df, pulse_limit=256, transform=None, pre_transform=None, pre_filter=None
+        self,
+        df,
+        pulse_limit=MAX_PULSES,
+        transform=None,
+        pre_transform=None,
+        pre_filter=None,
     ):
         super().__init__(transform, pre_transform, pre_filter)
         # Polars DataFrame containing batch_id & event_id. Store as list
-        self.df = df.rows()
+        self.df = df.to_numpy()
         self.pulse_limit = pulse_limit
 
     def len(self):
@@ -107,6 +114,11 @@ class IceCubeDataset(Dataset):
 
         # Drop the absorption data as its essentially the same as scattering
         data.x = data.x[:, :-1]
+
+        # Rescale time
+        t = data.x[:, 3] * 3.0e4 + 1.0e4  # Undo the GraphNet scaling
+        t -= t.min()  # Align the initial times for each event
+        data.x[:, 3] = (t - 6000) / 6000  # Reassign with new scale
 
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
@@ -131,17 +143,23 @@ class IceCubeDataset(Dataset):
 
         mat = pairwise_euclidean_distance(data.x[:, :3])
         mat = mat + torch.eye(data.n_pulses) * 1000
-        dists = []
+        prev = []
 
         for i in range(data.n_pulses):
-            masked_mat = mat[: i + 1, : i + 1]
             if i == 0:
-                dists.append(0)
+                prev.append([0])
+                # prev.append([0, 0])
             else:
-                dists.append(masked_mat[i].min())
+                prev.append([mat[: i + 1, i].min()])
 
-        dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.5) / 0.5
-        data.x = torch.cat([data.x, dists], dim=1)
+                # masked_mat = mat[: i + 1, i]
+                # idx = torch.argmin(masked_mat)
+                # d = (masked_mat[idx] - 0.5) / 0.5
+                # t_delta = (t[i] - t[idx] - 0.1) / 0.1
+                # prev.append([d, t_delta])
+
+        prev = torch.tensor(prev, dtype=torch.float32)
+        data.x = torch.cat([data.x, prev], dim=1)
 
         return data
 
@@ -150,7 +168,7 @@ class IceCubeContrastiveDataset(Dataset):
     def __init__(
         self,
         df,
-        pulse_limit=300,
+        pulse_limit=MAX_PULSES,
         drop_node_rate=0.2,
         transform=None,
         pre_transform=None,
@@ -227,7 +245,7 @@ class IceCubeSubmissionDataset(Dataset):
         event_ids,
         sensor_df,
         mode="test",
-        pulse_limit=300,
+        pulse_limit=MAX_PULSES,
         transform=None,
         pre_transform=None,
         pre_filter=None,
@@ -258,13 +276,6 @@ class IceCubeSubmissionDataset(Dataset):
         x = torch.tensor(x, dtype=torch.float32)
         data = Data(x=x, n_pulses=torch.tensor(x.shape[0], dtype=torch.int32))
 
-        # Add ice transparency data
-        z = data.x[:, 2].numpy()
-        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
-        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
-
-        data.x = torch.cat([data.x, scattering], dim=1)
-
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
             perm = torch.randperm(data.x.size(0))
@@ -273,6 +284,11 @@ class IceCubeSubmissionDataset(Dataset):
 
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
+        # Add ice transparency data
+        z = data.x[:, 2].numpy()
+        scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
+        # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
+
         # Distance from nearest previous pulse
         # Data objects no not preserve order, so need to sort by time
         t, indices = torch.sort(data.x[:, 3])
@@ -280,18 +296,23 @@ class IceCubeSubmissionDataset(Dataset):
 
         mat = pairwise_euclidean_distance(data.x[:, :3])
         mat = mat + torch.eye(data.n_pulses) * 1000
-        dists = []
+        prev = []
 
         for i in range(data.n_pulses):
-            masked_mat = mat[: i + 1, : i + 1]
             if i == 0:
-                dists.append(0)
+                prev.append([0])
+                # prev.append([0, 0])
             else:
-                dists.append(masked_mat[i].min())
+                prev.append([mat[: i + 1, i].min()])
 
-        dists = (torch.tensor(dists, dtype=torch.float32).view(-1, 1) - 0.5) / 0.5
-        data.x = torch.cat([data.x, dists], dim=1)
+                # masked_mat = mat[: i + 1, i]
+                # idx = torch.argmin(masked_mat)
+                # d = (masked_mat[idx] - 0.5) / 0.5
+                # t_delta = (t[i] - t[idx] - 0.1) / 0.1
+                # prev.append([d, t_delta])
 
+        prev = torch.tensor(prev, dtype=torch.float32)
+        data.x = torch.cat([data.x, scattering, prev], dim=1)
         return data
 
 
@@ -303,7 +324,7 @@ class IceCubeSubmissionDatasetV2(Dataset):
         event_ids,
         sensor_df,
         mode="test",
-        pulse_limit=300,
+        pulse_limit=MAX_PULSES,
         transform=None,
         pre_transform=None,
         pre_filter=None,
@@ -374,7 +395,9 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.max_len = max_len
         self.num_workers = num_workers
-        self.df = pls.read_parquet(INPUT_PATH / train_file)
+        self.df = pls.read_parquet(
+            INPUT_PATH / train_file, columns=["fold", "batch_id", "event_id"]
+        )
         self.train_steps = 0
         self.pre_transform = T.Compose(
             [
@@ -409,6 +432,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             shuffle=True,
             drop_last=True,
             pin_memory=True,
+            persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -417,6 +441,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
+            persistent_workers=True,
         )
 
     def predict_dataloader(self):

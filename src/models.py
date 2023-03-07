@@ -1,16 +1,19 @@
+import gc
+
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from graphnet.models.task.reconstruction import (
     AzimuthReconstructionWithKappa,
-    ZenithReconstruction,
     DirectionReconstructionWithKappa,
+    ZenithReconstruction,
 )
 from graphnet.training.loss_functions import VonMisesFisher2DLoss, VonMisesFisher3DLoss
-from transformers import get_cosine_schedule_with_warmup
 from torch_geometric.data import Batch
+from transformers import get_cosine_schedule_with_warmup
+
 from src.losses import angular_dist_score
-from src.modules import DynEdge, GraphAttentionNetwork, GPS, GravNet
+from src.modules import GPS, DynEdge, GraphAttentionNetwork, GravNet
 from src.utils import add_weight_decay
 
 
@@ -129,6 +132,9 @@ class IceCubeModel(pl.LightningModule):
             on_epoch=True,
             batch_size=self.hparams.batch_size,
         )
+
+    def validation_epoch_end(self, outputs):
+        gc.collect()
 
     def configure_optimizers(self):
         parameters = add_weight_decay(
