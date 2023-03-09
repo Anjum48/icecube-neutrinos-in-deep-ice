@@ -91,8 +91,7 @@ class IceCubeDataset(Dataset):
         pre_filter=None,
     ):
         super().__init__(transform, pre_transform, pre_filter)
-        # Polars DataFrame containing batch_id & event_id. Store as list
-        self.df = df.to_numpy()
+        self.df = df
         self.pulse_limit = pulse_limit
 
     def len(self):
@@ -118,12 +117,6 @@ class IceCubeDataset(Dataset):
 
         # Rescale time
         data.x[:, 3] *= 10
-
-        # t = data.x[:, 3] * 3.0e4 + 1.0e4  # Undo the GraphNet scaling
-        # # t -= t.min()  # Align the initial times for each event
-        # data.x[:, 3] = (t - 6000) / 6000  # Reassign with new scale
-
-        # data.x[:, 3] = torch.log(t) - 9.2
 
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
@@ -155,8 +148,8 @@ class IceCubeDataset(Dataset):
                 prev.append([0])
                 # prev.append([0, 0])
             else:
-                prev.append([mat[: i + 1, i].min()])
-                # prev.append([(mat[: i + 1, i].min() - 0.5 / 0.5)])
+                # prev.append([mat[: i + 1, i].min()])
+                prev.append([(mat[: i + 1, i].min() - 0.5 / 0.5)])
 
                 # masked_mat = mat[: i + 1, i]
                 # idx = torch.argmin(masked_mat)
@@ -416,19 +409,29 @@ class IceCubeDataModule(pl.LightningDataModule):
         )
 
     def setup(self, stage=None, fold_n: int = 0):
-        trn_df = self.df.filter(pls.col("fold") != fold_n).select(
-            ["batch_id", "event_id"]
-        )
-        val_df = self.df.filter(pls.col("fold") == fold_n).select(
-            ["batch_id", "event_id"]
-        )
 
-        # if stage == "fit" or stage is None:
-        self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
-        self.clr_valid = IceCubeDataset(val_df, pre_transform=self.pre_transform)
+        if stage == "fit":
+            trn_df = (
+                self.df.filter(pls.col("fold") != fold_n)
+                .select(["batch_id", "event_id"])
+                .to_numpy()
+            )
+            val_df = (
+                self.df.filter(pls.col("fold") == fold_n)
+                .select(["batch_id", "event_id"])
+                .to_numpy()
+            )
 
-        self.train_steps = len(self.clr_train) / self.batch_size
-        print(len(self.clr_train), "train and", len(self.clr_valid), "valid samples")
+            self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
+            self.clr_valid = IceCubeDataset(val_df, pre_transform=self.pre_transform)
+
+            self.train_steps = len(self.clr_train) / self.batch_size
+            print(
+                len(self.clr_train), "train and", len(self.clr_valid), "valid samples"
+            )
+
+            del trn_df
+            del val_df
 
     def train_dataloader(self):
         return DataLoader(
@@ -438,7 +441,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             shuffle=True,
             drop_last=True,
             pin_memory=True,
-            persistent_workers=True,
+            # persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -447,7 +450,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
-            persistent_workers=True,
+            # persistent_workers=True,
         )
 
     def predict_dataloader(self):

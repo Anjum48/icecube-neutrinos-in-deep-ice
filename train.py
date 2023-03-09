@@ -59,6 +59,7 @@ def run_fold(cfg: DictConfig):
         logger=list(loggers.values()),
         callbacks=list(callbacks.values()),
         benchmark=False,  # https://github.com/Lightning-AI/lightning/issues/12713
+        num_sanity_val_steps=0,
         # plugins=DDPStrategy(find_unused_parameters=False),
         # fast_dev_run=True,
         # auto_lr_find=True,
