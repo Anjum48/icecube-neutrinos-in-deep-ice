@@ -58,7 +58,6 @@ def run_fold(cfg: DictConfig):
     trainer = pl.Trainer(
         logger=list(loggers.values()),
         callbacks=list(callbacks.values()),
-        ckpt_path=resume,
         benchmark=False,  # https://github.com/Lightning-AI/lightning/issues/12713
         # plugins=DDPStrategy(find_unused_parameters=False),
         # fast_dev_run=True,
@@ -68,7 +67,7 @@ def run_fold(cfg: DictConfig):
     )
 
     # trainer.tune(model, datamodule=dm)  # Use with auto_lr_find
-    trainer.fit(model, datamodule=dm)
+    trainer.fit(model, datamodule=dm, ckpt_path=resume)
 
 
 if __name__ == "__main__":
