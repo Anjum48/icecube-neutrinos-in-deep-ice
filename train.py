@@ -26,7 +26,8 @@ def get_num_steps(cfg, dm):
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def run_fold(cfg: DictConfig):
     pl.seed_everything(cfg.run.seed + cfg.run.fold, workers=True)
-    # resume, run_id = resume_helper("20230227-083426", "GPS", wandb_id="p1j6tfv0")
+
+    # resume, run_id = resume_helper("20230308-153829", "DynEdge", wandb_id="xeszhplz")
     resume, run_id = None, None
 
     monitor_list = [("loss/valid", "min", "loss"), ("metric", "min", "metric")]
@@ -38,7 +39,6 @@ def run_fold(cfg: DictConfig):
         monitors=monitor_list,
         tensorboard=cfg.run.logging,
         wandb=cfg.run.logging,
-        patience=None,
         run_id=run_id,
         save_weights_only=False,
     )
@@ -58,7 +58,7 @@ def run_fold(cfg: DictConfig):
     trainer = pl.Trainer(
         logger=list(loggers.values()),
         callbacks=list(callbacks.values()),
-        resume_from_checkpoint=resume,
+        ckpt_path=resume,
         benchmark=False,  # https://github.com/Lightning-AI/lightning/issues/12713
         # plugins=DDPStrategy(find_unused_parameters=False),
         # fast_dev_run=True,

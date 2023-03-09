@@ -1002,7 +1002,7 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
         "zenith": output[:, 1],
     }
 
-    sub = pd.DataFrame(sub)
+    sub = pd.DataFrame(sub).sort_values(by="event_id")
     sub.to_csv("submission.csv", index=False)
 
 

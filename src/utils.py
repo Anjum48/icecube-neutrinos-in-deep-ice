@@ -119,10 +119,12 @@ def resume_helper(timestamp=None, model_name=None, fold=1, wandb_id=None):
         [type]: [description]
     """
     if timestamp is not None:
-        paths = (OUTPUT_PATH / timestamp / model_name / f"fold_{fold - 1}").glob(
-            "*.*loss.ckpt"
-        )
-        resume = list(paths)[0]
+        # paths = (OUTPUT_PATH / timestamp / model_name / f"fold_{fold - 1}").glob(
+        #     "*.*loss.ckpt"
+        # )
+        # resume = list(paths)[0]
+
+        resume = OUTPUT_PATH / timestamp / model_name / f"fold_{fold - 1}" / "last.ckpt"
 
         if wandb_id is not None:
             run_id = wandb_id
@@ -281,18 +283,23 @@ class LogSummaryCallback(Callback):
         self.best_value = torch.inf if summary_type == "min" else -torch.inf
 
     def on_validation_epoch_end(self, trainer, pl_module):
-        metric_value = trainer.callback_metrics[self.metric_name]
+        try:
+            metric_value = trainer.callback_metrics[self.metric_name]
 
-        if self.summary_type == "min" and metric_value < self.best_value:
-            self.best_value = metric_value
-        elif self.summary_type == "max" and metric_value > self.best_value:
-            self.best_value = metric_value
-        else:
+            if self.summary_type == "min" and metric_value < self.best_value:
+                self.best_value = metric_value
+            elif self.summary_type == "max" and metric_value > self.best_value:
+                self.best_value = metric_value
+            else:
+                pass
+
+            pl_module.log(
+                f"{self.metric_name}_{self.summary_type}",
+                self.best_value,
+                sync_dist=True,
+            )
+        except KeyError:
             pass
-
-        pl_module.log(
-            f"{self.metric_name}_{self.summary_type}", self.best_value, sync_dist=True
-        )
 
 
 def mixup_data_multiobjective(x, y1, y2, alpha=1.0):

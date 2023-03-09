@@ -1,21 +1,22 @@
 import copy
+import gc
 
 import numpy as np
 import pandas as pd
 import polars as pls
 import pytorch_lightning as pl
 import torch
+import torch_geometric.transforms as T
 from graphnet.models.graph_builders import KNNGraphBuilder, RadialGraphBuilder
 from scipy.interpolate import interp1d
 from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
 from torchmetrics.functional import pairwise_euclidean_distance
-import torch_geometric.transforms as T
 
 from src.config import INPUT_PATH, INPUT_PATH_ALT
 
-MAX_PULSES = 256
+MAX_PULSES = 512
 
 
 def create_folds(data, n_splits=5, random_state=48):
@@ -116,9 +117,13 @@ class IceCubeDataset(Dataset):
         data.x = data.x[:, :-1]
 
         # Rescale time
-        t = data.x[:, 3] * 3.0e4 + 1.0e4  # Undo the GraphNet scaling
-        t -= t.min()  # Align the initial times for each event
-        data.x[:, 3] = (t - 6000) / 6000  # Reassign with new scale
+        data.x[:, 3] *= 10
+
+        # t = data.x[:, 3] * 3.0e4 + 1.0e4  # Undo the GraphNet scaling
+        # # t -= t.min()  # Align the initial times for each event
+        # data.x[:, 3] = (t - 6000) / 6000  # Reassign with new scale
+
+        # data.x[:, 3] = torch.log(t) - 9.2
 
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
@@ -151,6 +156,7 @@ class IceCubeDataset(Dataset):
                 # prev.append([0, 0])
             else:
                 prev.append([mat[: i + 1, i].min()])
+                # prev.append([(mat[: i + 1, i].min() - 0.5 / 0.5)])
 
                 # masked_mat = mat[: i + 1, i]
                 # idx = torch.argmin(masked_mat)
@@ -404,7 +410,7 @@ class IceCubeDataModule(pl.LightningDataModule):
                 KNNGraphBuilder(
                     nb_nearest_neighbours=nearest_neighbours, columns=[0, 1, 2, 3]
                 ),
-                # RadialGraphBuilder(radius=radius / 500, columns=[0, 1, 2, 3]),
+                # RadialGraphBuilder(radius=radius / 500),
                 calculate_edge_attributes,
             ]
         )
