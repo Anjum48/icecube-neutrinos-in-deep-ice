@@ -394,9 +394,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.max_len = max_len
         self.num_workers = num_workers
-        self.df = pls.read_parquet(
-            INPUT_PATH / train_file, columns=["fold", "batch_id", "event_id"]
-        )
+        self.train_file = train_file
         self.train_steps = 0
         self.pre_transform = T.Compose(
             [
@@ -411,13 +409,17 @@ class IceCubeDataModule(pl.LightningDataModule):
     def setup(self, stage=None, fold_n: int = 0):
 
         if stage == "fit":
+            df = pls.read_parquet(
+                INPUT_PATH / self.train_file, columns=["fold", "batch_id", "event_id"]
+            )
+
             trn_df = (
-                self.df.filter(pls.col("fold") != fold_n)
+                df.filter(pls.col("fold") != fold_n)
                 .select(["batch_id", "event_id"])
                 .to_numpy()
             )
             val_df = (
-                self.df.filter(pls.col("fold") == fold_n)
+                df.filter(pls.col("fold") == fold_n)
                 .select(["batch_id", "event_id"])
                 .to_numpy()
             )
@@ -430,6 +432,7 @@ class IceCubeDataModule(pl.LightningDataModule):
                 len(self.clr_train), "train and", len(self.clr_valid), "valid samples"
             )
 
+            del df
             del trn_df
             del val_df
 
