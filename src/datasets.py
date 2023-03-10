@@ -140,24 +140,15 @@ class IceCubeDataset(Dataset):
         data.x = data.x[indices]
 
         mat = pairwise_euclidean_distance(data.x[:, :3])
-        mat = mat + torch.eye(data.n_pulses) * 1000
-        prev = []
+        mat = mat + torch.triu(torch.ones_like(mat)) * 1000
 
-        for i in range(data.n_pulses):
-            if i == 0:
-                prev.append([0])
-                # prev.append([0, 0])
-            else:
-                # prev.append([mat[: i + 1, i].min()])
-                prev.append([(mat[: i + 1, i].min() - 0.5 / 0.5)])
+        dists, idx = mat.min(1)
+        dists = (dists - 0.5) / 0.5
+        t_delta = (t - t[idx] - 0.1) / 0.1
 
-                # masked_mat = mat[: i + 1, i]
-                # idx = torch.argmin(masked_mat)
-                # d = (masked_mat[idx] - 0.5) / 0.5
-                # t_delta = (t[i] - t[idx] - 0.1) / 0.1
-                # prev.append([d, t_delta])
+        prev = torch.stack([dists, t_delta], dim=-1)
+        prev[0] = 0
 
-        prev = torch.tensor(prev, dtype=torch.float32)
         data.x = torch.cat([data.x, prev], dim=1)
 
         return data
@@ -386,7 +377,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         folds: int = 5,
         nearest_neighbours: int = 8,
         radius: float = 160,
-        num_workers: int = 14,
+        num_workers: int = 8,
         **kwargs,
     ):
         super().__init__()
@@ -444,7 +435,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             shuffle=True,
             drop_last=True,
             pin_memory=True,
-            # persistent_workers=True,
+            persistent_workers=True,
         )
 
     def val_dataloader(self):
@@ -453,7 +444,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
-            # persistent_workers=True,
+            persistent_workers=True,
         )
 
     def predict_dataloader(self):
