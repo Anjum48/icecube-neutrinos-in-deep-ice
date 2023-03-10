@@ -415,13 +415,11 @@ class IceCubeDataModule(pl.LightningDataModule):
                 .to_numpy()
             )
 
-            self.clr_train = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
-            self.clr_valid = IceCubeDataset(val_df, pre_transform=self.pre_transform)
+            self.train_ds = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
+            self.valid_ds = IceCubeDataset(val_df, pre_transform=self.pre_transform)
 
-            self.train_steps = len(self.clr_train) / self.batch_size
-            print(
-                len(self.clr_train), "train and", len(self.clr_valid), "valid samples"
-            )
+            self.train_steps = len(self.train_ds) / self.batch_size
+            print(len(self.train_ds), "train and", len(self.valid_ds), "valid samples")
 
             del df
             del trn_df
@@ -429,27 +427,27 @@ class IceCubeDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            self.clr_train,
+            self.train_ds,
             num_workers=self.num_workers,
             batch_size=self.batch_size,
             shuffle=True,
             drop_last=True,
             pin_memory=True,
-            persistent_workers=True,
+            # persistent_workers=True,
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.clr_valid,
+            self.valid_ds,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
-            persistent_workers=True,
+            # persistent_workers=True,
         )
 
     def predict_dataloader(self):
         return DataLoader(
-            self.clr_valid,
+            self.valid_ds,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=True,
