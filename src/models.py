@@ -133,12 +133,6 @@ class IceCubeModel(pl.LightningModule):
             batch_size=self.hparams.batch_size,
         )
 
-    def training_epoch_end(self, outputs):
-        gc.collect()
-
-    def validation_epoch_end(self, outputs):
-        gc.collect()
-
     def configure_optimizers(self):
         parameters = add_weight_decay(
             self,

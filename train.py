@@ -27,7 +27,7 @@ def get_num_steps(cfg, dm):
 def run_fold(cfg: DictConfig):
     pl.seed_everything(cfg.run.seed + cfg.run.fold, workers=True)
 
-    # resume, run_id = resume_helper("20230309-155857", "DynEdge", wandb_id="yirwrr8j")
+    # resume, run_id = resume_helper("20230310-074516", "DynEdge", wandb_id="89v9920n")
     resume, run_id = None, None
 
     monitor_list = [("loss/valid", "min", "loss"), ("metric", "min", "metric")]
