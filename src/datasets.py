@@ -16,7 +16,12 @@ from torchmetrics.functional import pairwise_euclidean_distance
 
 from src.config import INPUT_PATH, INPUT_PATH_ALT
 
-MAX_PULSES = 512
+MAX_PULSES = 256
+
+C_VACUUM = 299792458  # m/s
+N_ICE = 1.319  # At 400nm. From 2.3 of https://arxiv.org/pdf/2203.02303.pdf
+C_ICE = (C_VACUUM / N_ICE) * 1e-9  # m/ns
+T_DELAY = 0  # ns  DOM Error = 3 ns Section 2.4 of https://arxiv.org/pdf/2203.02303.pdf
 
 
 def create_folds(data, n_splits=5, random_state=48):
@@ -75,7 +80,7 @@ def rotation_transform(data):
 
 
 def calculate_edge_attributes(d):
-    dist = (d.x[d.edge_index[0], :3] - d.x[d.edge_index[1], :3]).sum(-1).pow(2)
+    dist = (d.x[d.edge_index[0], :3] - d.x[d.edge_index[1], :3]).pow(2).sum(-1).pow(0.5)
     delta_t = (d.x[d.edge_index[0], 3] - d.x[d.edge_index[1], 3]).abs()
     d.edge_attr = torch.stack([dist, delta_t], dim=1)
     return d
@@ -115,9 +120,6 @@ class IceCubeDataset(Dataset):
         # Drop the absorption data as its essentially the same as scattering
         data.x = data.x[:, :-1]
 
-        # Rescale time
-        data.x[:, 3] *= 10
-
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
         # data.x = data.x[indices]
@@ -134,11 +136,24 @@ class IceCubeDataset(Dataset):
 
             data.n_pulses = torch.tensor(self.pulse_limit, dtype=torch.int32)
 
-        # Distance from nearest previous pulse
-        # Data objects no not preserve order, so need to sort by time
+        # Data objects do not preserve order, so need to sort by time
         t, indices = torch.sort(data.x[:, 3])
         data.x = data.x[indices]
 
+        # Calculate the scattering flag
+        q_max_idx = torch.argmax(data.x[:, 4])
+        xyz = data.x[:, :3]
+        dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
+        delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
+        scattered = dists / C_ICE >= delta_t + T_DELAY
+
+        scattered = 2 * scattered.to(torch.float32).view(-1, 1) - 1
+
+        # Rescale time & aux
+        data.x[:, 3] *= 10
+        data.x[:, 6] *= 2
+
+        # Distance from nearest previous pulse
         mat = pairwise_euclidean_distance(data.x[:, :3])
         mat = mat + torch.triu(torch.ones_like(mat)) * 1000
 
@@ -149,7 +164,7 @@ class IceCubeDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        data.x = torch.cat([data.x, prev], dim=1)
+        data.x = torch.cat([data.x, prev, scattered], dim=1)
 
         return data
 
