@@ -16,7 +16,8 @@ def infer(model, loader, device="cuda"):
     model.to(device)
     model.eval()
 
-    model = TTAWrapper(model, device, angles=[0, 120, 240])
+    model = TTAWrapper(model, device, angles=[0, 180])
+    # model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
 
     predictions, target = [], []
     with torch.no_grad():
@@ -112,10 +113,10 @@ if __name__ == "__main__":
         # "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
         # "20230315-112434",  # 0.99068
         # "20230313-213901",  # 0.98947
-        "20230317-063036",
+        "20230319-112145",
     ]
     # Ensemble: 0.98652
 
     args = parser.parse_args()
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+    # os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     predictions = make_predictions(folders, device="cuda:0")

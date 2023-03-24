@@ -1,5 +1,7 @@
 import copy
-import gc
+import warnings
+
+warnings.simplefilter("ignore", UserWarning)
 
 import numpy as np
 import pandas as pd
@@ -58,7 +60,8 @@ def ice_transparency(data_path, datum=1950):
 
 
 def rotation_transform(data):
-    theta = 2 * np.pi * np.random.rand()
+    # theta = 2 * np.pi * np.random.rand()
+    theta = np.random.choice([0, 60, 120, 180, 240, 300]) * np.pi / 180
 
     rotz = torch.tensor(
         [
@@ -94,10 +97,13 @@ class IceCubeDataset(Dataset):
         transform=None,
         pre_transform=None,
         pre_filter=None,
+        augmentation=None,
     ):
         super().__init__(transform, pre_transform, pre_filter)
         self.df = df
         self.pulse_limit = pulse_limit
+        self.augmentation = augmentation
+        self.origin = torch.tensor([46.29, -34.88]) / 500  # String 35
 
     def len(self):
         return len(self.df)
@@ -119,6 +125,9 @@ class IceCubeDataset(Dataset):
 
         # Drop the absorption data as its essentially the same as scattering
         data.x = data.x[:, :-1]
+
+        # Center on string 35
+        data.x[:, :2] = data.x[:, :2] - self.origin
 
         # Add cumulative features
         # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
@@ -164,7 +173,11 @@ class IceCubeDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        data.x = torch.cat([data.x, prev, scattered], dim=1)
+        # data.x = torch.cat([data.x, prev, scattered], dim=1)
+        data.x = torch.cat([data.x, prev], dim=1)
+
+        if self.augmentation:
+            data = self.augmentation(data)
 
         return data
 
@@ -414,7 +427,7 @@ class IceCubeDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None, fold_n: int = 0):
 
-        if stage == "fit":
+        if stage == "fit" or stage == "predict":
             df = pls.read_parquet(
                 INPUT_PATH / self.train_file, columns=["fold", "batch_id", "event_id"]
             )
@@ -430,7 +443,11 @@ class IceCubeDataModule(pl.LightningDataModule):
                 .to_numpy()
             )
 
-            self.train_ds = IceCubeDataset(trn_df, pre_transform=self.pre_transform)
+            self.train_ds = IceCubeDataset(
+                trn_df,
+                pre_transform=self.pre_transform,
+                augmentation=rotation_transform,
+            )
             self.valid_ds = IceCubeDataset(val_df, pre_transform=self.pre_transform)
 
             self.train_steps = len(self.train_ds) / self.batch_size
@@ -475,24 +492,33 @@ class IceCubeDataModule(pl.LightningDataModule):
 #     COMP_NAME = "icecube-neutrinos-in-deep-ice"
 #     sys.path.append(f"/home/anjum/kaggle/{COMP_NAME}/")
 
-#     meta = pls.read_parquet(INPUT_PATH / "train_meta.parquet")
+#     meta = (
+#         pls.read_parquet(INPUT_PATH / "train_meta.parquet")
+#         .select(["batch_id", "event_id"])
+#         .to_numpy()
+#     )
 #     # ds = IceCubeDataset(meta)
-#     ds = IceCubeDataset(meta, pre_transform=KNNGraphBuilder(nb_nearest_neighbours=8))
-#     # dl = DataLoader(ds, batch_size=4)
+#     ds = IceCubeDataset(
+#         meta,
+#         pre_transform=KNNGraphBuilder(nb_nearest_neighbours=8),
+#         transform=rotation_transform,
+#     )
+#     dl = DataLoader(ds, batch_size=4)
 
 #     # for d in dl:
 #     #     print(d)
 #     #     break
 
-#     # d = ds[0]
-#     # d = calculate_edge_attributes(d)
-#     # print(d)
-#     # print(d.edge_attr[0].mean(), d.edge_attr[0].min(), d.edge_attr[0].max())
-#     # print(d.edge_attr[1].mean(), d.edge_attr[1].min(), d.edge_attr[1].max())
+#     d = ds[0]
+#     print(d.y)
+# d = calculate_edge_attributes(d)
+# print(d)
+# print(d.edge_attr[0].mean(), d.edge_attr[0].min(), d.edge_attr[0].max())
+# print(d.edge_attr[1].mean(), d.edge_attr[1].min(), d.edge_attr[1].max())
 
-#     # for batch in dl:
-#     #     print(batch)
-#     #     a, b = batch
-#     #     print(a.index_select([0]))
-#     #     print(b.index_select([1]))
-#     #     break
+# for batch in dl:
+#     print(batch)
+#     a, b = batch
+#     print(a.index_select([0]))
+#     print(b.index_select([1]))
+#     break
