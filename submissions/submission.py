@@ -766,9 +766,7 @@ class IceCubeSubmissionDataset(Dataset):
         self.batch_df = pd.read_parquet(INPUT_PATH / mode / f"batch_{batch_id}.parquet")
         self.sensor_df = sensor_df
         self.pulse_limit = pulse_limit
-        self.f_scattering, self.f_absorption = ice_transparency(
-            INPUT_PATH / "ice_transparency.txt"
-        )
+        self.f_scattering, self.f_absorption = ice_transparency(TRANSPARENCY_PATH)
 
         self.batch_df["time"] = (self.batch_df["time"] - 1.0e04) / 3.0e4
         self.batch_df["charge"] = np.log10(self.batch_df["charge"]) / 3.0
