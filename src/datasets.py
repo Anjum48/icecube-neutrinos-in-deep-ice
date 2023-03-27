@@ -207,6 +207,8 @@ class IceCubeSubmissionDataset(Dataset):
         self.batch_df["charge"] = np.log10(self.batch_df["charge"]) / 3.0
         self.batch_df["auxiliary"] = self.batch_df["auxiliary"].astype(int) - 0.5
 
+        self.origin = torch.tensor([46.29, -34.88]) / 500  # String 35
+
     def len(self):
         return len(self.event_ids)
 
@@ -233,30 +235,40 @@ class IceCubeSubmissionDataset(Dataset):
         scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
         # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
 
-        # Distance from nearest previous pulse
-        # Data objects no not preserve order, so need to sort by time
+        # Center on string 35
+        data.x[:, :2] = data.x[:, :2] - self.origin
+
+        # Data objects do not preserve order, so need to sort by time
         t, indices = torch.sort(data.x[:, 3])
         data.x = data.x[indices]
 
+        # Calculate the scattering flag
+        q_max_idx = torch.argmax(data.x[:, 4])
+        xyz = data.x[:, :3]
+        dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
+        delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
+        scattered = dists / C_ICE >= delta_t + T_DELAY
+
+        scattered = 2 * scattered.to(torch.float32).view(-1, 1) - 1
+
+        # Rescale time & aux
+        data.x[:, 3] *= 10
+        data.x[:, 6] *= 2
+
+        # Distance from nearest previous pulse
         mat = pairwise_euclidean_distance(data.x[:, :3])
-        mat = mat + torch.eye(data.n_pulses) * 1000
-        prev = []
+        mat = mat + torch.triu(torch.ones_like(mat)) * 1000
 
-        for i in range(data.n_pulses):
-            if i == 0:
-                prev.append([0])
-                # prev.append([0, 0])
-            else:
-                prev.append([mat[: i + 1, i].min()])
+        dists, idx = mat.min(1)
+        dists = (dists - 0.5) / 0.5
+        t_delta = (t - t[idx] - 0.1) / 0.1
 
-                # masked_mat = mat[: i + 1, i]
-                # idx = torch.argmin(masked_mat)
-                # d = (masked_mat[idx] - 0.5) / 0.5
-                # t_delta = (t[i] - t[idx] - 0.1) / 0.1
-                # prev.append([d, t_delta])
+        prev = torch.stack([dists, t_delta], dim=-1)
+        prev[0] = 0
 
-        prev = torch.tensor(prev, dtype=torch.float32)
+        # data.x = torch.cat([data.x, scattering, prev, scattered], dim=1)
         data.x = torch.cat([data.x, scattering, prev], dim=1)
+
         return data
 
 

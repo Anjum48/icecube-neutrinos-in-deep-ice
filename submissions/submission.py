@@ -71,6 +71,13 @@ GLOBAL_POOLINGS = {
     "mean": scatter_mean,
 }
 
+MAX_PULSES = 256
+
+C_VACUUM = 299792458  # m/s
+N_ICE = 1.319  # At 400nm. From 2.3 of https://arxiv.org/pdf/2203.02303.pdf
+C_ICE = (C_VACUUM / N_ICE) * 1e-9  # m/ns
+T_DELAY = 0  # ns  DOM Error = 3 ns Section 2.4 of https://arxiv.org/pdf/2203.02303.pdf
+
 _dtype = {
     "batch_id": "int16",
     "event_id": "int64",
@@ -87,7 +94,7 @@ class IceCubeModel(pl.LightningModule):
         eps: float = 1e-8,
         warmup: float = 0.0,
         T_max: int = 1000,
-        nb_inputs: int = 9,
+        nb_inputs: int = 10,
         nearest_neighbours: int = 8,
         **kwargs,
     ):
@@ -152,12 +159,15 @@ class IceCubeModel(pl.LightningModule):
         loss_cos = 1 - self.loss_fn_cos(pred_xyzk[:, :3], target_xyz).mean()
         loss = loss_vmf + loss_cos
 
-        self.log_dict({"loss/train_step": loss})
+        self.log(
+            "loss/train",
+            loss,
+            on_epoch=True,
+            on_step=True,
+            sync_dist=True,
+            batch_size=self.hparams.batch_size,
+        )
         return {"loss": loss}
-
-    def training_epoch_end(self, training_step_outputs):
-        avg_loss = torch.stack([x["loss"] for x in training_step_outputs]).mean()
-        self.log("loss/train", avg_loss, sync_dist=True)
 
     def validation_step(self, batch, batch_idx):
         pred_xyzk = self.forward(batch)
@@ -172,40 +182,24 @@ class IceCubeModel(pl.LightningModule):
 
         metric = angular_dist_score(pred_angles, target_angles)
 
-        output = {
-            "val_loss": loss,
-            "metric": metric,
-            "val_loss_cos": loss_cos,
-            "val_loss_vmf": loss_vmf,
-        }
-
-        return output
-
-    def validation_epoch_end(self, outputs):
-        if len(outputs) > 0:
-            loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
-            val_loss_cos = torch.stack([x["val_loss_cos"] for x in outputs]).mean()
-            metric = torch.stack([x["metric"] for x in outputs]).mean()
-
-            self.log_dict(
-                {"loss/valid": loss_val, "metric": metric},
-                prog_bar=True,
-                sync_dist=True,
-            )
-            self.log_dict(
-                {"loss/valid_cos": val_loss_cos},
-                prog_bar=False,
-                sync_dist=True,
-            )
-        else:
-            self.log_dict(
-                {
-                    "loss/valid": torch.tensor(10.0, dtype=torch.float32),
-                    "metric": torch.tensor(10.0, dtype=torch.float32),
-                },
-                prog_bar=True,
-                sync_dist=True,
-            )
+        self.log(
+            "metric",
+            metric,
+            prog_bar=True,
+            sync_dist=True,
+            on_epoch=True,
+            batch_size=self.hparams.batch_size,
+        )
+        self.log_dict(
+            {
+                "loss/valid": loss,
+                "loss/valid_cos": loss_cos,
+                "loss/valid_vmf": loss_vmf,
+            },
+            sync_dist=True,
+            on_epoch=True,
+            batch_size=self.hparams.batch_size,
+        )
 
     def configure_optimizers(self):
         parameters = add_weight_decay(
@@ -762,7 +756,7 @@ class IceCubeSubmissionDataset(Dataset):
         event_ids,
         sensor_df,
         mode="test",
-        pulse_limit=512,
+        pulse_limit=MAX_PULSES,
         transform=None,
         pre_transform=None,
         pre_filter=None,
@@ -772,11 +766,15 @@ class IceCubeSubmissionDataset(Dataset):
         self.batch_df = pd.read_parquet(INPUT_PATH / mode / f"batch_{batch_id}.parquet")
         self.sensor_df = sensor_df
         self.pulse_limit = pulse_limit
-        self.f_scattering, self.f_absorption = ice_transparency(TRANSPARENCY_PATH)
+        self.f_scattering, self.f_absorption = ice_transparency(
+            INPUT_PATH / "ice_transparency.txt"
+        )
 
         self.batch_df["time"] = (self.batch_df["time"] - 1.0e04) / 3.0e4
         self.batch_df["charge"] = np.log10(self.batch_df["charge"]) / 3.0
         self.batch_df["auxiliary"] = self.batch_df["auxiliary"].astype(int) - 0.5
+
+        self.origin = torch.tensor([46.29, -34.88]) / 500  # String 35
 
     def len(self):
         return len(self.event_ids)
@@ -804,30 +802,40 @@ class IceCubeSubmissionDataset(Dataset):
         scattering = torch.tensor(self.f_scattering(z), dtype=torch.float32).view(-1, 1)
         # absorption = torch.tensor(self.f_absorption(z), dtype=torch.float32).view(-1, 1)
 
-        # Distance from nearest previous pulse
-        # Data objects no not preserve order, so need to sort by time
+        # Center on string 35
+        data.x[:, :2] = data.x[:, :2] - self.origin
+
+        # Data objects do not preserve order, so need to sort by time
         t, indices = torch.sort(data.x[:, 3])
         data.x = data.x[indices]
 
+        # Calculate the scattering flag
+        q_max_idx = torch.argmax(data.x[:, 4])
+        xyz = data.x[:, :3]
+        dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
+        delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
+        scattered = dists / C_ICE >= delta_t + T_DELAY
+
+        scattered = 2 * scattered.to(torch.float32).view(-1, 1) - 1
+
+        # Rescale time & aux
+        data.x[:, 3] *= 10
+        data.x[:, 6] *= 2
+
+        # Distance from nearest previous pulse
         mat = pairwise_euclidean_distance(data.x[:, :3])
-        mat = mat + torch.eye(data.n_pulses) * 1000
-        prev = []
+        mat = mat + torch.triu(torch.ones_like(mat)) * 1000
 
-        for i in range(data.n_pulses):
-            if i == 0:
-                prev.append([0])
-                # prev.append([0, 0])
-            else:
-                prev.append([mat[: i + 1, i].min()])
+        dists, idx = mat.min(1)
+        dists = (dists - 0.5) / 0.5
+        t_delta = (t - t[idx] - 0.1) / 0.1
 
-                # masked_mat = mat[: i + 1, i]
-                # idx = torch.argmin(masked_mat)
-                # d = (masked_mat[idx] - 0.5) / 0.5
-                # t_delta = (t[i] - t[idx] - 0.1) / 0.1
-                # prev.append([d, t_delta])
+        prev = torch.stack([dists, t_delta], dim=-1)
+        prev[0] = 0
 
-        prev = torch.tensor(prev, dtype=torch.float32)
+        # data.x = torch.cat([data.x, scattering, prev, scattered], dim=1)
         data.x = torch.cat([data.x, scattering, prev], dim=1)
+
         return data
 
 
@@ -896,23 +904,32 @@ class TTAWrapper(nn.Module):
 
     def forward(self, data):
         azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
-        data_rot = data
+        weight = 1 / len(self.angles)
+        # data_rot = data
+
+        x_data = torch.clone(data.x)
 
         for a, mat in zip(self.angles, self.rmats):
-            data_rot.x[:, :3] = torch.matmul(data.x[:, :3], mat)
+            data.x[:, :3] = torch.matmul(x_data[:, :3], mat)
 
-            pred_xyzk = self.model(data_rot)
-            pred_angles = self.model.xyz_to_angles(pred_xyzk)
+            pred_xyzk = self.model(data)
+
+            if isinstance(self.model, nn.DataParallel):
+                pred_angles = self.model.module.xyz_to_angles(pred_xyzk)
+            else:
+                pred_angles = self.model.xyz_to_angles(pred_xyzk)
+
             a_out, z_out = pred_angles[:, 0], pred_angles[:, 1]
 
-            # Remove rotation from the azimuth prediction
-            azi_out_sin += torch.sin(a_out + a)
-            azi_out_cos += torch.cos(a_out + a)
-            zen_out += z_out
+            # Remove rotation from the azimuth prediction by adding a
+            a_out += a
 
-        # https://en.wikipedia.org/wiki/Circular_mean
+            # https://en.wikipedia.org/wiki/Circular_mean
+            azi_out_sin += weight * torch.sin(a_out)
+            azi_out_cos += weight * torch.cos(a_out)
+            zen_out += weight * z_out
+
         azi_out = torch.atan2(azi_out_sin, azi_out_cos)
-        zen_out /= len(self.angles)
 
         return azi_out, zen_out
 
@@ -920,7 +937,7 @@ class TTAWrapper(nn.Module):
 def infer(model, dataset, batch_size=32, device="cuda"):
     model.to(device)
     model.eval()
-    model = TTAWrapper(model, device)
+    model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=2)
 
     predictions = []
@@ -1012,7 +1029,8 @@ if __name__ == "__main__":
     model_folders = [
         # "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
         # "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
-        "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
+        # "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
+        "20230323-102724",
     ]
 
     if KERNEL:
