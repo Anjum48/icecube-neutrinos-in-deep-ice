@@ -8,4 +8,4 @@ sync_batchnorm: True
 # limit_val_batches: 0.05
 val_check_interval: 0.5
 gradient_clip_val: 0.5
-log_every_n_steps: 100
+# log_every_n_steps: 100

@@ -44,11 +44,17 @@ class IceCubeModel(pl.LightningModule):
                 features_subset=slice(0, 4),  # NN search using xyzt
             )
         elif model_name == "GPS":
-            self.model = GPS(channels=128, num_layers=7, dropout=0.5, heads=4)
+            self.model = GPS(
+                nb_inputs=nb_inputs,
+                channels=128,
+                num_layers=7,
+                dropout=0.5,
+                heads=4,
+            )
         elif model_name == "GAT":
-            self.model = GraphAttentionNetwork()
+            self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
         elif model_name == "GravNet":
-            self.model = GravNet()
+            self.model = GravNet(nb_inputs=nb_inputs)
 
         self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,

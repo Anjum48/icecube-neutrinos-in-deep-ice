@@ -1,4 +1,3 @@
-import copy
 import warnings
 
 warnings.simplefilter("ignore", UserWarning)
@@ -19,7 +18,6 @@ from torchmetrics.functional import pairwise_euclidean_distance
 from src.config import INPUT_PATH, INPUT_PATH_ALT
 
 MAX_PULSES = 256
-
 C_VACUUM = 299792458  # m/s
 N_ICE = 1.319  # At 400nm. From 2.3 of https://arxiv.org/pdf/2203.02303.pdf
 C_ICE = (C_VACUUM / N_ICE) * 1e-9  # m/ns
@@ -129,14 +127,6 @@ class IceCubeDataset(Dataset):
         # Center on string 35
         data.x[:, :2] = data.x[:, :2] - self.origin
 
-        # Add cumulative features
-        # t, indices = torch.sort(data.x[:, 3])  # Data objects no not preserve order
-        # data.x = data.x[indices]
-        # cum_charge = torch.cumsum(10 ** (3 * data.x[:, 4]), 0).view(-1, 1)
-        # c_min, c_max = cum_charge.min(), cum_charge.max()
-        # charge_norm = 2 * (cum_charge - c_min) / (c_max - c_min) - 1
-        # t_norm = (2 * (t - t.min()) / (t.max() - t.min()) - 1).view(-1, 1)
-
         # Downsample the large events
         if data.n_pulses > self.pulse_limit:
             perm = torch.randperm(data.x.size(0))
@@ -149,18 +139,24 @@ class IceCubeDataset(Dataset):
         t, indices = torch.sort(data.x[:, 3])
         data.x = data.x[indices]
 
+        # Add cumulative features
+        # cum_charge = torch.cumsum(10 ** (3 * data.x[:, 4]), 0).view(-1, 1)
+        # c_min, c_max = cum_charge.min(), cum_charge.max()
+        # charge_norm = 2 * (cum_charge - c_min) / (c_max - c_min) - 1
+        # t_norm = (2 * (t - t.min()) / (t.max() - t.min()) - 1).view(-1, 1)
+
         # Calculate the scattering flag
-        q_max_idx = torch.argmax(data.x[:, 4])
-        xyz = data.x[:, :3]
-        dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
-        delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
-        scattered = dists / C_ICE >= delta_t + T_DELAY
+        # q_max_idx = torch.argmax(data.x[:, 4])
+        # xyz = data.x[:, :3]
+        # dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
+        # delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
+        # scatter_flag = dists / C_ICE >= delta_t + T_DELAY
 
-        scattered = 2 * scattered.to(torch.float32).view(-1, 1) - 1
+        # scatter_flag = scatter_flag.to(torch.float32).view(-1, 1) - 0.5
 
-        # Rescale time & aux
-        data.x[:, 3] *= 10
-        data.x[:, 6] *= 2
+        # Rescale time
+        data.x[:, 3] -= 0.06
+        data.x[:, 3] *= 4
 
         # Distance from nearest previous pulse
         mat = pairwise_euclidean_distance(data.x[:, :3])
@@ -173,7 +169,7 @@ class IceCubeDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        # data.x = torch.cat([data.x, prev, scattered], dim=1)
+        # data.x = torch.cat([data.x, prev, scatter_flag], dim=1)
         data.x = torch.cat([data.x, prev], dim=1)
 
         if self.augmentation:
@@ -247,9 +243,9 @@ class IceCubeSubmissionDataset(Dataset):
         xyz = data.x[:, :3]
         dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
         delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
-        scattered = dists / C_ICE >= delta_t + T_DELAY
+        scatter_flag = dists / C_ICE >= delta_t + T_DELAY
 
-        scattered = 2 * scattered.to(torch.float32).view(-1, 1) - 1
+        scatter_flag = 2 * scatter_flag.to(torch.float32).view(-1, 1) - 1
 
         # Rescale time & aux
         data.x[:, 3] *= 10
@@ -266,7 +262,7 @@ class IceCubeSubmissionDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        # data.x = torch.cat([data.x, scattering, prev, scattered], dim=1)
+        # data.x = torch.cat([data.x, scattering, prev, scatter_flag], dim=1)
         data.x = torch.cat([data.x, scattering, prev], dim=1)
 
         return data
@@ -384,7 +380,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.train_ds = IceCubeDataset(
                 trn_df,
                 pre_transform=self.pre_transform,
-                augmentation=rotation_transform,
+                # augmentation=rotation_transform,
             )
             self.valid_ds = IceCubeDataset(val_df, pre_transform=self.pre_transform)
 
