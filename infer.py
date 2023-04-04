@@ -2,6 +2,7 @@ import os
 from argparse import ArgumentParser
 
 import torch
+import torch.nn as nn
 from omegaconf import OmegaConf
 from tqdm.rich import tqdm
 
@@ -16,8 +17,11 @@ def infer(model, loader, device="cuda"):
     model.to(device)
     model.eval()
 
+    model = TTAWrapper(model, device, angles=[0, 180])
     # model = TTAWrapper(model, device, angles=[0, 180])
-    model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
+    # model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
+
+    # model = nn.DataParallel(model)
 
     predictions, target = [], []
     with torch.no_grad():
@@ -114,7 +118,8 @@ if __name__ == "__main__":
         # "20230315-112434",  # 0.99068
         # "20230313-213901",  # 0.98947
         # "20230319-112145",
-        "20230323-102724",
+        # "20230323-102724",
+        "20230402-083325",
     ]
     # Ensemble: 0.98652
 

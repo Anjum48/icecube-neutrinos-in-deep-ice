@@ -4,7 +4,7 @@
 model_name: DynEdge
 batch_size: 1024
 learning_rate: 0.0002
-weight_decay: 0.03
+weight_decay: 0.01
 warmup: 0.0
 nearest_neighbours: 8
 # eps: 1e-5

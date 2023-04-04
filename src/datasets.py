@@ -146,13 +146,13 @@ class IceCubeDataset(Dataset):
         # t_norm = (2 * (t - t.min()) / (t.max() - t.min()) - 1).view(-1, 1)
 
         # Calculate the scattering flag
-        # q_max_idx = torch.argmax(data.x[:, 4])
-        # xyz = data.x[:, :3]
-        # dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
-        # delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
-        # scatter_flag = dists / C_ICE >= delta_t + T_DELAY
+        q_max_idx = torch.argmax(data.x[:, 4])
+        xyz = data.x[:, :3]
+        dists = (xyz - xyz[q_max_idx]).pow(2).sum(-1).pow(0.5) * 500
+        delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
+        scatter_flag = dists / C_ICE >= delta_t + T_DELAY
 
-        # scatter_flag = scatter_flag.to(torch.float32).view(-1, 1) - 0.5
+        scatter_flag = scatter_flag.to(torch.float32).view(-1, 1) - 0.5
 
         # Rescale time
         data.x[:, 3] -= 0.06
@@ -169,8 +169,8 @@ class IceCubeDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        # data.x = torch.cat([data.x, prev, scatter_flag], dim=1)
-        data.x = torch.cat([data.x, prev], dim=1)
+        data.x = torch.cat([data.x, prev, scatter_flag], dim=1)
+        # data.x = torch.cat([data.x, prev], dim=1)
 
         if self.augmentation:
             data = self.augmentation(data)
@@ -380,7 +380,7 @@ class IceCubeDataModule(pl.LightningDataModule):
             self.train_ds = IceCubeDataset(
                 trn_df,
                 pre_transform=self.pre_transform,
-                # augmentation=rotation_transform,
+                augmentation=rotation_transform,
             )
             self.valid_ds = IceCubeDataset(val_df, pre_transform=self.pre_transform)
 

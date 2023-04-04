@@ -8,5 +8,6 @@
 # done
 # python infer.py --timestamp $timestamp
 
-python train.py
 python train.py model=gps
+python train.py
+python train.py model=gravnet
