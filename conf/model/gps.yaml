@@ -4,6 +4,6 @@
 model_name: GPS
 batch_size: 1024
 learning_rate: 0.0001
-weight_decay: 0.01
-warmup: 0.01
+weight_decay: 0.1
+warmup: 0.02
 nearest_neighbours: 8
