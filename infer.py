@@ -1,6 +1,7 @@
 import os
 from argparse import ArgumentParser
 
+import pandas as pd
 import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
@@ -81,6 +82,17 @@ def make_predictions(folders, suffix="metric", device="cuda"):
         final_preds.append(preds)
 
         print(f"Model {i} MAE: {mae:0.5f}")
+
+        # Save preds
+        oof = pd.DataFrame(
+            {
+                "azimuth": preds[:, 0],
+                "zenith": preds[:, 1],
+                "azimuth_gt": target[:, 0],
+                "zenith_gt": target[:, 1],
+            }
+        )
+        oof.to_parquet(p.parent / f"oofs.parquet")
 
     final_preds = circular_mean(final_preds)
     mae = angular_dist_score(final_preds, target)
