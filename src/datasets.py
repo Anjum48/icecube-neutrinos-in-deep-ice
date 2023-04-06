@@ -245,11 +245,11 @@ class IceCubeSubmissionDataset(Dataset):
         delta_t = (torch.abs(t - t[q_max_idx])) * 3e4
         scatter_flag = dists / C_ICE >= delta_t + T_DELAY
 
-        scatter_flag = 2 * scatter_flag.to(torch.float32).view(-1, 1) - 1
+        scatter_flag = scatter_flag.to(torch.float32).view(-1, 1) - 0.5
 
-        # Rescale time & aux
-        data.x[:, 3] *= 10
-        data.x[:, 6] *= 2
+        # Rescale time
+        data.x[:, 3] -= 0.06
+        data.x[:, 3] *= 4
 
         # Distance from nearest previous pulse
         mat = pairwise_euclidean_distance(data.x[:, :3])
@@ -262,8 +262,8 @@ class IceCubeSubmissionDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        # data.x = torch.cat([data.x, scattering, prev, scatter_flag], dim=1)
-        data.x = torch.cat([data.x, scattering, prev], dim=1)
+        data.x = torch.cat([data.x, scattering, prev, scatter_flag], dim=1)
+        # data.x = torch.cat([data.x, scattering, prev], dim=1)
 
         return data
 
