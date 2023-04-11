@@ -19,7 +19,7 @@ def infer(model, loader, device="cuda"):
     model.to(device)
     model.eval()
 
-    # model = TTAWrapper(model, device, angles=[0, 180])
+    # model = TTAWrapper(model, device, angles=[0])
     # model = TTAWrapper(model, device, angles=[0, 180])
     model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
 
@@ -47,16 +47,16 @@ def infer(model, loader, device="cuda"):
 
 def circular_mean(preds):
     azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
+    weight = 1 / len(preds)
 
     for p in preds:
         a_out, z_out = p[:, 0], p[:, 1]
-        azi_out_sin += torch.sin(a_out)
-        azi_out_cos += torch.cos(a_out)
-        zen_out += z_out
+        azi_out_sin += weight * torch.sin(a_out)
+        azi_out_cos += weight * torch.cos(a_out)
+        zen_out += weight * z_out
 
     # https://en.wikipedia.org/wiki/Circular_mean
     azi_out = torch.atan2(azi_out_sin, azi_out_cos)
-    zen_out /= len(preds)
 
     return torch.stack([azi_out, zen_out], dim=1)
 
@@ -136,7 +136,8 @@ if __name__ == "__main__":
         # "20230323-102724",
         # "20230402-083325",
         "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
-        "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98945
+        "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98940
+        "20230411-220932",  # GravNet
     ]
     # Ensemble: 0.98513
 

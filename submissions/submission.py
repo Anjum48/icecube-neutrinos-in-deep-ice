@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.interpolate import interp1d
-from sklearn.preprocessing import RobustScaler
 from torch import LongTensor, Tensor
 from torch.utils.data import DataLoader, Dataset
 from torchmetrics.functional import pairwise_euclidean_distance
@@ -749,7 +748,7 @@ def ice_transparency(data_path, datum=1950):
 
 
 def calculate_edge_attributes(d):
-    dist = (d.x[d.edge_index[0], :3] - d.x[d.edge_index[1], :3]).sum(-1).pow(2)
+    dist = (d.x[d.edge_index[0], :3] - d.x[d.edge_index[1], :3]).pow(2).sum(-1).pow(0.5)
     delta_t = (d.x[d.edge_index[0], 3] - d.x[d.edge_index[1], 3]).abs()
     d.edge_attr = torch.stack([dist, delta_t], dim=1)
     return d
@@ -973,6 +972,7 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
     batch_ids = meta["batch_id"].unique()
 
     azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
+    weight = 1 / num_models
 
     if mode == "train":
         batch_ids = batch_ids[:6]
@@ -1005,13 +1005,11 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
                     break
 
             model_output = torch.cat(batch_preds, 0)
-            azi_out_sin += torch.sin(model_output[:, 0])
-            azi_out_cos += torch.cos(model_output[:, 0])
-            zen_out += model_output[:, 1]
+            azi_out_sin += weight * torch.sin(model_output[:, 0])
+            azi_out_cos += weight * torch.cos(model_output[:, 0])
+            zen_out += weight * model_output[:, 1]
 
     azi_out = torch.atan2(azi_out_sin, azi_out_cos)
-    zen_out /= num_models
-    output = torch.stack([azi_out, zen_out], dim=1)
 
     event_id_labels = []
     for b in batch_ids:
@@ -1019,8 +1017,8 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
 
     sub = {
         "event_id": event_id_labels,
-        "azimuth": output[:, 0],
-        "zenith": output[:, 1],
+        "azimuth": azi_out,
+        "zenith": zen_out,
     }
 
     sub = pd.DataFrame(sub).sort_values(by="event_id")
