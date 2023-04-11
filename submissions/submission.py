@@ -94,7 +94,7 @@ class IceCubeModel(pl.LightningModule):
         eps: float = 1e-8,
         warmup: float = 0.0,
         T_max: int = 1000,
-        nb_inputs: int = 10,
+        nb_inputs: int = 11,
         nearest_neighbours: int = 8,
         **kwargs,
     ):
@@ -112,11 +112,17 @@ class IceCubeModel(pl.LightningModule):
                 features_subset=slice(0, 4),  # NN search using xyzt
             )
         elif model_name == "GPS":
-            self.model = GPS(channels=128, num_layers=7, dropout=0.5, heads=4)
+            self.model = GPS(
+                nb_inputs=nb_inputs,
+                channels=128,
+                num_layers=7,
+                dropout=0.5,
+                heads=4,
+            )
         # elif model_name == "GAT":
-        #     self.model = GraphAttentionNetwork()
+        #     self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
         # elif model_name == "GravNet":
-        #     self.model = GravNet()
+        #     self.model = GravNet(nb_inputs=nb_inputs)
 
         self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
@@ -1028,7 +1034,9 @@ if __name__ == "__main__":
         # "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
         # "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
         # "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
-        "20230323-102724",
+        # "20230323-102724",
+        "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
+        "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98945
     ]
 
     if KERNEL:

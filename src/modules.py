@@ -405,7 +405,7 @@ class DynEdge(GNN):
 
 # https://colab.research.google.com/github/AntonioLonga/PytorchGeometricTutorial/blob/main/Tutorial3/Tutorial3.ipynb#scrollTo=YAiLrvGcz-6l
 class GraphAttentionNetwork(torch.nn.Module):
-    def __init__(self, nb_inputs=8, nb_outputs=128):
+    def __init__(self, nb_inputs=8, nb_outputs=128, num_layers: int = 8):
         super(GraphAttentionNetwork, self).__init__()
         self.nb_inputs = nb_inputs
         self.nb_outputs = nb_outputs
@@ -415,22 +415,38 @@ class GraphAttentionNetwork(torch.nn.Module):
 
         self.dropout = 0.5
 
-        self.conv1 = GATConv(
-            nb_inputs, self.hid, heads=self.in_head, dropout=self.dropout
-        )
-        self.conv2 = GATConv(
-            self.hid * self.in_head,
-            self.hid,
-            heads=self.in_head,
-            dropout=self.dropout,
-        )
-        self.conv3 = GATConv(
-            self.hid * self.in_head,
-            nb_outputs,
-            concat=False,
-            heads=self.out_head,
-            dropout=self.dropout,
-        )
+        self.convs = nn.ModuleList()
+
+        for i in range(num_layers):
+            if i == 0:
+                inputs = nb_inputs
+                outputs = self.hid
+            elif i == num_layers - 1:
+                inputs = self.hid * self.in_head
+                outputs = self.hid
+            else:
+                inputs = self.hid * self.in_head
+                outputs = nb_outputs
+
+            conv = GATConv(inputs, outputs, heads=self.in_head, dropout=self.dropout)
+            self.convs.append(conv)
+
+        # self.conv1 = GATConv(
+        #     nb_inputs, self.hid, heads=self.in_head, dropout=self.dropout
+        # )
+        # self.conv2 = GATConv(
+        #     self.hid * self.in_head,
+        #     self.hid,
+        #     heads=self.in_head,
+        #     dropout=self.dropout,
+        # )
+        # self.conv3 = GATConv(
+        #     self.hid * self.in_head,
+        #     nb_outputs,
+        #     concat=False,
+        #     heads=self.out_head,
+        #     dropout=self.dropout,
+        # )
 
         self.global_pooling = aggr.MultiAggregation(
             [
@@ -456,22 +472,36 @@ class GraphAttentionNetwork(torch.nn.Module):
         # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
         # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
 
-        x = F.dropout(x, p=self.dropout)
-        x = self.conv1(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
+        # x = F.dropout(x, p=self.dropout)
+        # x = self.conv1(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
 
-        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
-        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+        # # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
 
-        x = F.gelu(x)
-        x = F.dropout(x, p=self.dropout)
-        x = self.conv2(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
+        # x = F.gelu(x)
+        # x = F.dropout(x, p=self.dropout)
+        # x = self.conv2(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
 
-        # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
-        # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
+        # # edge_index = radius_graph(x[:, :3], r=160 / 500, batch=batch)
+        # # edge_index = knn_graph(x[:, :3], k=8, batch=batch)
 
-        x = F.gelu(x)
-        x = F.dropout(x, p=self.dropout)
-        x = self.conv3(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
+        # x = F.gelu(x)
+        # x = F.dropout(x, p=self.dropout)
+        # x = self.conv3(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
+
+        # TODO: Skip connections
+        # skip_connections = [x]
+        for i, conv in enumerate(self.convs):
+
+            if i > 0:
+                x = F.gelu(x)
+
+            x = F.dropout(x, p=self.dropout)
+            x = conv(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
+            # skip_connections.append(x)
+
+        # Skip-cat
+        # x = torch.cat(skip_connections, dim=1)
 
         x = self.global_pooling(x, batch)
 

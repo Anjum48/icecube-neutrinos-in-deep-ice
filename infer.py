@@ -1,7 +1,8 @@
-import os
 from argparse import ArgumentParser
 
+import numpy as np
 import pandas as pd
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from omegaconf import OmegaConf
@@ -18,9 +19,9 @@ def infer(model, loader, device="cuda"):
     model.to(device)
     model.eval()
 
-    model = TTAWrapper(model, device, angles=[0, 180])
     # model = TTAWrapper(model, device, angles=[0, 180])
-    # model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
+    # model = TTAWrapper(model, device, angles=[0, 180])
+    model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
 
     # model = nn.DataParallel(model)
 
@@ -61,6 +62,8 @@ def circular_mean(preds):
 
 
 def make_predictions(folders, suffix="metric", device="cuda"):
+
+    pl.seed_everything(48, workers=True)
 
     mpaths = []
     for f in folders:
@@ -131,10 +134,12 @@ if __name__ == "__main__":
         # "20230313-213901",  # 0.98947
         # "20230319-112145",
         # "20230323-102724",
-        "20230402-083325",
+        # "20230402-083325",
+        "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
+        "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98945
     ]
-    # Ensemble: 0.98652
+    # Ensemble: 0.98513
 
     args = parser.parse_args()
     # os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
-    predictions = make_predictions(folders, device="cuda:0")
+    predictions = make_predictions(folders, device=f"cuda:{str(args.gpu)}")
