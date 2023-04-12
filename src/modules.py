@@ -409,7 +409,7 @@ class GraphAttentionNetwork(torch.nn.Module):
         self,
         nb_inputs=8,
         nb_outputs=128,
-        num_layers: int = 10,
+        num_layers: int = 8,
         heads=4,
         hidden=64,
         dropout=0.5,
@@ -417,8 +417,6 @@ class GraphAttentionNetwork(torch.nn.Module):
         super(GraphAttentionNetwork, self).__init__()
         self.nb_inputs = nb_inputs
         self.nb_outputs = nb_outputs
-        self.hid = hidden
-        self.heads = heads
         self.dropout = dropout
 
         self.convs = nn.ModuleList()
@@ -426,15 +424,15 @@ class GraphAttentionNetwork(torch.nn.Module):
         for i in range(num_layers):
             if i == 0:
                 inputs = nb_inputs
-                outputs = self.hid
+                outputs = hidden
             elif i == num_layers - 1:
-                inputs = self.hid * self.heads
-                outputs = self.hid
+                inputs = hidden * heads
+                outputs = hidden
             else:
-                inputs = self.hid * self.heads
-                outputs = self.hid
+                inputs = hidden * heads
+                outputs = hidden
 
-            conv = GATConv(inputs, outputs, heads=self.heads, dropout=self.dropout)
+            conv = GATConv(inputs, outputs, heads=heads, dropout=dropout)
             # conv = SuperGATConv(
             #     inputs,
             #     outputs,
@@ -459,16 +457,16 @@ class GraphAttentionNetwork(torch.nn.Module):
         self.head = nn.Sequential(
             nn.GELU(),
             nn.Linear(
-                self.hid * self.heads * len(self.global_pooling.aggrs),
-                self.nb_outputs,
+                (nb_inputs + hidden * heads * num_layers)
+                * len(self.global_pooling.aggrs),
+                nb_outputs,
             ),
         )
 
     def forward(self, data):
         x, batch = data.x, data.batch
 
-        # TODO: Skip connections
-        # skip_connections = [x]
+        skip_connections = [x]
         for i, conv in enumerate(self.convs):
 
             if i > 0:
@@ -477,10 +475,10 @@ class GraphAttentionNetwork(torch.nn.Module):
             x = F.dropout(x, p=self.dropout)
             x = conv(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
             # x = conv(x, edge_index=data.edge_index)
-            # skip_connections.append(x)
+            skip_connections.append(x)
 
         # Skip-cat
-        # x = torch.cat(skip_connections, dim=1)
+        x = torch.cat(skip_connections, dim=1)
 
         x = self.global_pooling(x, batch)
         x = self.head(x)
