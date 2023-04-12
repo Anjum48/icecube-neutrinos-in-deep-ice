@@ -765,6 +765,7 @@ class IceCubeSubmissionDataset(Dataset):
         transform=None,
         pre_transform=None,
         pre_filter=None,
+        old_norm=False,
     ):
         super().__init__(transform, pre_transform, pre_filter)
         self.event_ids = event_ids
@@ -778,6 +779,8 @@ class IceCubeSubmissionDataset(Dataset):
         self.batch_df["auxiliary"] = self.batch_df["auxiliary"].astype(int) - 0.5
 
         self.origin = torch.tensor([46.29, -34.88]) / 500  # String 35
+
+        self.old_norm = old_norm
 
     def len(self):
         return len(self.event_ids)
@@ -821,9 +824,15 @@ class IceCubeSubmissionDataset(Dataset):
 
         scatter_flag = scatter_flag.to(torch.float32).view(-1, 1) - 0.5
 
-        # Rescale time
-        data.x[:, 3] -= 0.06
-        data.x[:, 3] *= 4
+        if self.old_norm:
+            # Rescale time & aux
+            data.x[:, 3] *= 10
+            data.x[:, 6] *= 2
+        else:
+
+            # Rescale time
+            data.x[:, 3] -= 0.06
+            data.x[:, 3] *= 4
 
         # Distance from nearest previous pulse
         mat = pairwise_euclidean_distance(data.x[:, :3])
@@ -836,8 +845,10 @@ class IceCubeSubmissionDataset(Dataset):
         prev = torch.stack([dists, t_delta], dim=-1)
         prev[0] = 0
 
-        data.x = torch.cat([data.x, scattering, prev, scatter_flag], dim=1)
-        # data.x = torch.cat([data.x, scattering, prev], dim=1)
+        if self.old_norm:
+            data.x = torch.cat([data.x, scattering, prev], dim=1)
+        else:
+            data.x = torch.cat([data.x, scattering, prev, scatter_flag], dim=1)
 
         return data
 
@@ -993,9 +1004,20 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
             batch_preds = []
             for b in batch_ids:
                 event_ids = meta[meta["batch_id"] == b]["event_id"].tolist()
-                dataset = IceCubeSubmissionDataset(
-                    b, event_ids, sensors, mode=mode, pre_transform=pre_transform
-                )
+
+                if "20230323-102724" in str(p):
+                    dataset = IceCubeSubmissionDataset(
+                        b,
+                        event_ids,
+                        sensors,
+                        mode=mode,
+                        pre_transform=pre_transform,
+                        old_norm=True,
+                    )
+                else:
+                    dataset = IceCubeSubmissionDataset(
+                        b, event_ids, sensors, mode=mode, pre_transform=pre_transform
+                    )
                 batch_preds.append(
                     infer(model, dataset, device=device, batch_size=1024)
                 )
@@ -1032,7 +1054,7 @@ if __name__ == "__main__":
         # "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
         # "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
         # "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
-        # "20230323-102724",
+        "20230323-102724",  # Best DynEdge CV so far (no scatter flag)
         "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
         "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98945
     ]

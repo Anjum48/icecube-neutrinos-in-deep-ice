@@ -154,6 +154,10 @@ class IceCubeDataset(Dataset):
 
         scatter_flag = scatter_flag.to(torch.float32).view(-1, 1) - 0.5
 
+        # # Rescale time & aux
+        # data.x[:, 3] *= 10
+        # data.x[:, 6] *= 2
+
         # Rescale time
         data.x[:, 3] -= 0.06
         data.x[:, 3] *= 4
