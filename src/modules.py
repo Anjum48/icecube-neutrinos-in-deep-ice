@@ -472,7 +472,6 @@ class GraphAttentionNetwork(torch.nn.Module):
             if i > 0:
                 x = F.gelu(x)
 
-            x = F.dropout(x, p=self.dropout)
             x = conv(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
             # x = conv(x, edge_index=data.edge_index)
             skip_connections.append(x)
