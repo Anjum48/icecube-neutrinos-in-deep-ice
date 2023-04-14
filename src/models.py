@@ -74,7 +74,7 @@ class IceCubeModel(pl.LightningModule):
         z = xyz[:, 2]
         r = torch.sqrt(x**2 + y**2 + z**2)
 
-        zen = torch.arccos(z / r)
+        zen = torch.arccos(torch.clamp(z / r, -1, 1))
         azi = torch.arctan2(y, x)
 
         return torch.stack([azi, zen], dim=1)
