@@ -404,6 +404,7 @@ class DynEdge(GNN):
 
 
 # https://colab.research.google.com/github/AntonioLonga/PytorchGeometricTutorial/blob/main/Tutorial3/Tutorial3.ipynb#scrollTo=YAiLrvGcz-6l
+# https://github.com/pyg-team/pytorch_geometric/blob/master/examples/super_gat.py
 class GraphAttentionNetwork(torch.nn.Module):
     def __init__(
         self,
@@ -411,7 +412,7 @@ class GraphAttentionNetwork(torch.nn.Module):
         nb_outputs=128,
         num_layers: int = 8,
         heads=4,
-        hidden=64,
+        hidden=128,
         dropout=0.5,
     ):
         super(GraphAttentionNetwork, self).__init__()
@@ -484,71 +485,6 @@ class GraphAttentionNetwork(torch.nn.Module):
         return x
 
 
-# # https://github.com/pyg-team/pytorch_geometric/blob/master/examples/super_gat.py
-# class GraphAttentionNetwork(torch.nn.Module):
-#     def __init__(self, nb_inputs=8, nb_outputs=128):
-#         super().__init__()
-
-#         self.nb_inputs = nb_inputs
-#         self.nb_outputs = nb_outputs
-
-#         self.conv1 = SuperGATConv(
-#             nb_inputs,
-#             8,
-#             heads=8,
-#             dropout=0.6,
-#             attention_type="MX",
-#             edge_sample_ratio=0.8,
-#             is_undirected=True,
-#         )
-#         self.conv2 = SuperGATConv(
-#             8 * 8,
-#             nb_outputs,
-#             heads=8,
-#             concat=False,
-#             dropout=0.6,
-#             attention_type="MX",
-#             edge_sample_ratio=0.8,
-#             is_undirected=True,
-#         )
-
-#         self.global_pooling = aggr.MultiAggregation(
-#             [
-#                 "min",
-#                 "max",
-#                 "mean",
-#                 "sum",
-#                 "std",
-#                 "median",
-#             ],
-#         )
-
-#         self.head = nn.Sequential(
-#             nn.GELU(),
-#             nn.Linear(self.nb_outputs * 6, self.nb_outputs),
-#         )
-
-#     def forward(self, data):
-#         x, edge_index, edge_attr, batch = (
-#             data.x,
-#             data.edge_index,
-#             data.edge_attr,
-#             data.batch,
-#         )
-
-#         x = F.dropout(x, p=0.6, training=self.training)
-#         x = self.conv1(x, edge_index=edge_index, edge_attr=edge_attr)
-#         x = F.elu(x)
-
-#         x = F.dropout(x, p=0.6, training=self.training)
-#         x = self.conv2(x, edge_index=edge_index, edge_attr=edge_attr)
-#         x = F.elu(x)
-
-#         x = self.global_pooling(x, batch)
-#         x = self.head(x)
-#         return x
-
-
 # Recipe for a General, Powerful, Scalable Graph Transformer
 # https://github.com/pyg-team/pytorch_geometric/blob/master/examples/graph_gps.py
 # https://arxiv.org/pdf/2205.12454.pdf
@@ -596,8 +532,6 @@ class GPS(torch.nn.Module):
                 "max",
                 "mean",
                 "sum",
-                # "std",
-                # "median",
                 # aggr.PowerMeanAggregation(learn=True),
                 # aggr.LSTMAggregation(channels, channels),
                 # aggr.SoftmaxAggregation(t=1, learn=True),
@@ -688,8 +622,6 @@ class GravNet(torch.nn.Module):
                 "max",
                 "mean",
                 "sum",
-                "std",
-                "median",
             ],
         )
 
