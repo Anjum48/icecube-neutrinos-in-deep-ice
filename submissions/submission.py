@@ -58,7 +58,7 @@ from graphnet.training.loss_functions import VonMisesFisher3DLoss
 from graphnet.utilities.config import save_model_config
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import EdgeConv, GINEConv, GPSConv, aggr
+from torch_geometric.nn import EdgeConv, GINEConv, GPSConv, GravNetConv, aggr
 from torch_geometric.nn.pool import knn_graph
 from torch_geometric.typing import Adj
 from torch_scatter import scatter_max, scatter_mean, scatter_min, scatter_sum
@@ -120,8 +120,8 @@ class IceCubeModel(pl.LightningModule):
             )
         # elif model_name == "GAT":
         #     self.model = GraphAttentionNetwork(nb_inputs=nb_inputs)
-        # elif model_name == "GravNet":
-        #     self.model = GravNet(nb_inputs=nb_inputs)
+        elif model_name == "GravNet":
+            self.model = GravNet(nb_inputs=nb_inputs)
 
         self.task = DirectionReconstructionWithKappa(
             hidden_size=self.model.nb_outputs,
@@ -141,7 +141,7 @@ class IceCubeModel(pl.LightningModule):
         z = xyz[:, 2]
         r = torch.sqrt(x**2 + y**2 + z**2)
 
-        zen = torch.arccos(z / r)
+        zen = torch.arccos(torch.clamp(z / r, -1, 1))
         azi = torch.arctan2(y, x)
 
         return torch.stack([azi, zen], dim=1)
@@ -270,7 +270,6 @@ class DynEdgeConv(EdgeConv, pl.LightningModule):
     def forward(
         self, x: Tensor, edge_index: Adj, batch: Optional[Tensor] = None
     ) -> Tensor:
-
         """Forward pass."""
         # Standard EdgeConv forward pass
         x = super().forward(x, edge_index)
@@ -651,6 +650,88 @@ class GPS(torch.nn.Module):
         return self.head(x)
 
 
+class GravNetBlock(nn.Module):
+    def __init__(self, in_features, out_features, s, flr, k) -> None:
+        super().__init__()
+        self.conv = GravNetConv(in_features, out_features, s, flr, k)
+        self.act = nn.ReLU()
+        self.bn = nn.BatchNorm1d(out_features)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, x, batch):
+        x = self.conv(x, batch)
+        # x = self.bn(x)
+        x = self.act(x)
+        # x = self.dropout(x)
+        return x
+
+
+class GravNet(torch.nn.Module):
+    def __init__(
+        self,
+        nb_inputs: int = 8,
+        nb_outputs: int = 128,
+        hidden_channels: int = 256,
+        num_blocks: int = 8,
+        s: int = 4,
+        flr: int = 64,
+        k: int = 20,
+    ):
+        super(GravNet, self).__init__()
+        self.nb_inputs = nb_inputs
+        self.nb_outputs = nb_outputs
+
+        self.blocks = nn.ModuleList()
+
+        total_hidden = nb_inputs
+        step = 3
+
+        for n in range(num_blocks):
+            multiplier = n // step
+
+            if n == 0:
+                in_features = nb_inputs
+                out_features = hidden_channels
+            else:
+                in_features = hidden_channels * 2**multiplier
+                out_features = in_features
+
+                if n % step == step - 1:
+                    out_features *= 2
+
+            total_hidden += out_features
+
+            self.blocks.append(GravNetBlock(in_features, out_features, s, flr, k))
+
+        self.global_pooling = aggr.MultiAggregation(
+            [
+                "min",
+                "max",
+                "mean",
+                "sum",
+            ],
+        )
+
+        self.mid = nn.Linear(total_hidden, hidden_channels * 2)
+        self.head = nn.Linear(
+            hidden_channels * 2 * len(self.global_pooling.aggrs), nb_outputs
+        )
+
+    def forward(self, data):
+        x, batch = data.x, data.batch
+
+        final_cat = [x]
+
+        for block in self.blocks:
+            x = block(x, batch)
+            final_cat.append(x)
+
+        x = torch.cat(final_cat, dim=1)
+        x = self.mid(x)
+        x = self.global_pooling(x, batch)
+        return self.head(x)
+
+
 # utils.py
 def add_weight_decay(
     model,
@@ -829,7 +910,6 @@ class IceCubeSubmissionDataset(Dataset):
             data.x[:, 3] *= 10
             data.x[:, 6] *= 2
         else:
-
             # Rescale time
             data.x[:, 3] -= 0.06
             data.x[:, 3] *= 4
@@ -965,7 +1045,9 @@ def infer(model, dataset, batch_size=32, device="cuda"):
     return torch.cat(predictions, 0)
 
 
-def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test"):
+def make_predictions(
+    dataset_paths, device="cuda", suffix="metric", mode="test", weights=None
+):
     mpaths = []
     for p in dataset_paths:
         mpaths.append(sorted(list(p.rglob(f"*{suffix}.ckpt"))))
@@ -983,14 +1065,15 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
     batch_ids = meta["batch_id"].unique()
 
     azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
-    weight = 1 / num_models
+
+    if weights is None:
+        weights = [1 / num_models] * num_models
 
     if mode == "train":
         batch_ids = batch_ids[:6]
 
     for i, group in enumerate(mpaths):
         for j, p in enumerate(group):
-
             model = IceCubeModel.load_from_checkpoint(p, strict=False)
 
             pre_transform = T.Compose(
@@ -1027,9 +1110,9 @@ def make_predictions(dataset_paths, device="cuda", suffix="metric", mode="test")
                     break
 
             model_output = torch.cat(batch_preds, 0)
-            azi_out_sin += weight * torch.sin(model_output[:, 0])
-            azi_out_cos += weight * torch.cos(model_output[:, 0])
-            zen_out += weight * model_output[:, 1]
+            azi_out_cos += weights[i] * torch.cos(model_output[:, 0])
+            azi_out_sin += weights[i] * torch.sin(model_output[:, 0])
+            zen_out += weights[i] * model_output[:, 1]
 
     azi_out = torch.atan2(azi_out_sin, azi_out_cos)
 
@@ -1051,17 +1134,18 @@ if __name__ == "__main__":
     pl.seed_everything(48, workers=True)
 
     model_folders = [
-        # "20230223-160821",  # 0.99089 DynEdge (6 epoch). LB: 0.988
-        # "20230227-083426",  # 0.99082 GPS (6 epoch). LB: ???
-        # "20230303-224857",  # 0.98867 DynEdge (nearest pulse). LB: 0.988
-        "20230323-102724",  # Best DynEdge CV so far (no scatter flag)
-        "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
+        "20230323-102724",  # Best DynEdge CV so far (no scatter flag), 6x = 0.98501
+        # "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
         "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98945
+        "20230415-152736",  # GravNet, 6x = 0.98XXX
     ]
+
+    # weights = [0.35226272, 0.16738237, 0.10536909, 0.37259442]
+    weights = [0.45168349, 0.13688131, 0.40900893]
 
     if KERNEL:
         dataset_paths = [Path(f"../input/icecube-{f}") for f in model_folders]
     else:
         dataset_paths = [OUTPUT_PATH / f for f in model_folders]
 
-    predictions = make_predictions(dataset_paths, mode="test")
+    predictions = make_predictions(dataset_paths, mode="test", weights=weights)
