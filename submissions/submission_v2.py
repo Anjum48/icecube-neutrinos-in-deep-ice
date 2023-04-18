@@ -1045,16 +1045,8 @@ class TTAWrapper(nn.Module):
 #     return torch.cat(predictions, 0)
 
 
-def infer(model_paths, dataset, weights=None, batch_size=32, device="cuda"):
-    
-    models = []
-    for p in model_paths:
-        model = IceCubeModel.load_from_checkpoint(p, strict=False)
-        model.to(device)
-        model.eval()
-        model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
-        models.append(model)
-        
+def infer(models, dataset, model_paths, weights=None, batch_size=32, device="cuda"):
+           
     if weights is None:
         num_models = len(models)
         weights = [1 / num_models] * num_models
@@ -1107,6 +1099,14 @@ def make_predictions(
     num_models = len(model_paths)
     print(f"{num_models} models found.")
 
+    models = []
+    for p in model_paths:
+        model = IceCubeModel.load_from_checkpoint(p, strict=False)
+        model.to(device)
+        model.eval()
+        model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
+        models.append(model)
+
     sensors = prepare_sensors()
 
     meta = pd.read_parquet(
@@ -1132,7 +1132,7 @@ def make_predictions(
             b, event_ids, sensors, mode=mode, pre_transform=pre_transform
         )
         batch_preds.append(
-            infer(model_paths, dataset, weights, device=device, batch_size=512)
+            infer(models, dataset, model_paths, weights, device=device, batch_size=512)
         )
         print("Finished batch", b)
 
