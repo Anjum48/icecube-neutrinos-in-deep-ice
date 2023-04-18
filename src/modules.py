@@ -32,25 +32,6 @@ GLOBAL_POOLINGS = {
 }
 
 
-# https://stackoverflow.com/questions/71464582/how-to-use-pytorchs-nn-multiheadattention
-class MHAttnLayer(nn.Module):
-    def __init__(self, in_features, embed_dim=64, num_heads=2, dropout=0.0):
-        super(MHAttnLayer, self).__init__()
-        self.q_trfm = nn.Linear(in_features, embed_dim, bias=False)
-        self.k_trfm = nn.Linear(in_features, embed_dim, bias=False)
-        self.v_trfm = nn.Linear(in_features, embed_dim, bias=False)
-        self.multihead_attn = nn.MultiheadAttention(
-            embed_dim, num_heads, dropout=dropout
-        )
-
-    def forward(self, x):
-        q = self.q_trfm(x)  # .unsqueeze(0)
-        k = self.k_trfm(x)  # .unsqueeze(0)
-        v = self.v_trfm(x)  # .unsqueeze(0)
-        attn_output, attn_output_weights = self.multihead_attn(q, k, v)
-        return attn_output_weights @ x
-
-
 class DynEdgeConv(EdgeConv, LightningModule):
     """Dynamical edge convolution layer."""
 
@@ -88,7 +69,6 @@ class DynEdgeConv(EdgeConv, LightningModule):
     def forward(
         self, x: Tensor, edge_index: Adj, batch: Optional[Tensor] = None
     ) -> Tensor:
-
         """Forward pass."""
         # Standard EdgeConv forward pass
         x = super().forward(x, edge_index)
@@ -458,8 +438,8 @@ class GraphAttentionNetwork(torch.nn.Module):
         self.head = nn.Sequential(
             nn.GELU(),
             nn.Linear(
-                (nb_inputs + hidden * heads * num_layers)
-                * len(self.global_pooling.aggrs),
+                # (nb_inputs + hidden * heads * num_layers)  # For skip connections
+                (hidden * heads) * len(self.global_pooling.aggrs),
                 nb_outputs,
             ),
         )
@@ -467,18 +447,17 @@ class GraphAttentionNetwork(torch.nn.Module):
     def forward(self, data):
         x, batch = data.x, data.batch
 
-        skip_connections = [x]
+        # skip_connections = [x]
         for i, conv in enumerate(self.convs):
-
             if i > 0:
                 x = F.gelu(x)
 
             x = conv(x, edge_index=data.edge_index, edge_attr=data.edge_attr)
             # x = conv(x, edge_index=data.edge_index)
-            skip_connections.append(x)
+            # skip_connections.append(x)
 
         # Skip-cat
-        x = torch.cat(skip_connections, dim=1)
+        # x = torch.cat(skip_connections, dim=1)
 
         x = self.global_pooling(x, batch)
         x = self.head(x)
