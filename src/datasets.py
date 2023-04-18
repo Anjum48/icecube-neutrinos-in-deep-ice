@@ -340,7 +340,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         batch_size: int = 32,
         max_len: int = 2048,
         seed: int = 48,
-        folds: int = 5,
+        folds: int = 10,
         nearest_neighbours: int = 8,
         radius: float = 155,
         num_workers: int = 8,
@@ -349,6 +349,7 @@ class IceCubeDataModule(pl.LightningDataModule):
         super().__init__()
 
         self.batch_size = batch_size
+        self.folds = folds
         self.max_len = max_len
         self.num_workers = num_workers
         self.train_file = train_file
@@ -363,8 +364,29 @@ class IceCubeDataModule(pl.LightningDataModule):
             ]
         )
 
-    def setup(self, stage=None, fold_n: int = 0):
+    def prepare_data(self) -> None:
+        if not (INPUT_PATH / self.train_file).exists():
+            _dtype = {
+                "batch_id": "int16",
+                "event_id": "int64",
+                "first_pulse_index": "int32",
+                "last_pulse_index": "int32",
+            }
 
+            meta = pd.read_parquet(
+                INPUT_PATH / "train_meta.parquet",
+                columns=[
+                    "batch_id",
+                    "event_id",
+                    "first_pulse_index",
+                    "last_pulse_index",
+                ],
+            ).astype(_dtype)
+
+            df = create_folds(meta, self.folds)
+            df.to_parquet(INPUT_PATH / self.train_file)
+
+    def setup(self, stage=None, fold_n: int = 0):
         if stage == "fit" or stage == "predict":
             df = pls.read_parquet(
                 INPUT_PATH / self.train_file, columns=["fold", "batch_id", "event_id"]
