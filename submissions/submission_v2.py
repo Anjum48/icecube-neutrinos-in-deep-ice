@@ -1028,23 +1028,6 @@ class TTAWrapper(nn.Module):
         return azi_out, zen_out
 
 
-# def infer(model, dataset, batch_size=32, device="cuda"):
-#     model.to(device)
-#     model.eval()
-#     model = TTAWrapper(model, device, angles=[0, 60, 120, 180, 240, 300])
-#     loader = DataLoader(dataset, batch_size=batch_size, num_workers=2)
-
-#     predictions = []
-#     with torch.no_grad():
-#         for batch in loader:
-#             batch = batch.to(device)
-#             pred_azi, pred_zen = model(batch)
-#             pred_angles = torch.stack([pred_azi, pred_zen], dim=1)
-#             predictions.append(pred_angles.cpu())
-
-#     return torch.cat(predictions, 0)
-
-
 def infer(models, dataset, model_paths, weights=None, batch_size=32, device="cuda"):
            
     if weights is None:
@@ -1055,7 +1038,7 @@ def infer(models, dataset, model_paths, weights=None, batch_size=32, device="cud
 
     predictions = []
     with torch.no_grad():
-        for batch in loader:
+        for batch in tqdm(loader):
             azi_out_sin, azi_out_cos, zen_out = 0, 0, 0
 
             x_data = torch.clone(batch.x)
