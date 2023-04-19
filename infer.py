@@ -62,7 +62,6 @@ def circular_mean(preds):
 
 
 def make_predictions(folders, suffix="metric", device="cuda"):
-
     pl.seed_everything(48, workers=True)
 
     mpaths = []
@@ -103,7 +102,6 @@ def make_predictions(folders, suffix="metric", device="cuda"):
 
 
 if __name__ == "__main__":
-
     # default_checkpoint = "20230130-085318"
 
     parser = ArgumentParser()
@@ -135,9 +133,10 @@ if __name__ == "__main__":
         # "20230319-112145",
         # "20230323-102724",
         # "20230402-083325",
-        "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
-        "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98940
-        "20230411-220932",  # GravNet
+        # "20230409-080525",  # DynEdge with Aug, 6x = 0.98701
+        # "20230405-063040",  # GPS with Aug. 2x = 0.98994, 6x = 0.98940
+        "20230415-152736",  # GravNet
+        # "20230418-074415",  # GPS with higher LR and no warmup
     ]
     # Ensemble: 0.98513
 
