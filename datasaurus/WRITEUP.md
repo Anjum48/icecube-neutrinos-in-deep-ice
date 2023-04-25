@@ -102,16 +102,16 @@ TBC
 
 # Lessons learned/stuff that didn’t work
 
-The GraphNet DynEdge baseline is extremely strong and tough to improve on - kudos to the team! It is also the fastest/efficient model, and what I used for the majority of experimentation
-More data = more better. The issue with this though is that I found that some conclusions drawn from experiments on 1% or 5% of the data were no longer applicable on the full dataset. This made experimentation slow and expensive
-Batch normalisation made things unstable and didn’t show improvements
-Lion optimiser didn’t generalise as well as AdamW
-Weight decay was important for some models. As a result I assumed changing the epsilon value in Adam would have an effect, but I didn’t see anything significant
-In my experiments, GNNs seem to benefit from leaky activations, e.g. GELU
-For MPNN aggregation, it seems that [min, max, mean, sum] is sufficient. Adding more didn’t appear to make significant gains
-Realigning all of the times to the time of the first hit of each event deteriorates performance, possibly due to noise in the data/false triggers etc.
-Radial nearest neighbours didn’t work any better than KNN when defining graph edges
-Only using 1 - CosineSimilarity as a loss function wasn’t very stable. Adding VMF3D helped a lot
+- The GraphNet DynEdge baseline is extremely strong and tough to improve on - kudos to the team! It is also the fastest/efficient model, and what I used for the majority of experimentation
+- More data = more better. The issue with this though is that I found that some conclusions drawn from experiments on 1% or 5% of the data were no longer applicable on the full dataset. This made experimentation slow and expensive
+- Batch normalisation made things unstable and didn’t show improvements
+- Lion optimiser didn’t generalise as well as AdamW
+- Weight decay was important for some models. As a result I assumed changing the epsilon value in Adam would have an effect, but I didn’t see anything significant
+- In my experiments, GNNs seem to benefit from leaky activations, e.g. GELU
+- For MPNN aggregation, it seems that [min, max, mean, sum] is sufficient. Adding more didn’t appear to make significant gains
+- Realigning all of the times to the time of the first hit of each event deteriorates performance, possibly due to noise in the data/false triggers etc.
+- Radial nearest neighbours didn’t work any better than KNN when defining graph edges
+- Only using 1 - CosineSimilarity as a loss function wasn’t very stable. Adding VMF3D helped a lot
 
 # Code
 
