@@ -27,13 +27,21 @@ In the context of GNNs, each DOM is considered as a node. Each node was given th
 Many of the normalisation methods were taken from GraphNet as a [starting point] (https://github.com/graphnet-team/graphnet/blob/4df8f396400da3cfca4ff1e0593a0c7d1b5b5195/src/graphnet/models/detector/icecube.py#L64-L69), but I altered the scale for time, since time is a very important feature here.
 
 For events with large numbers of hits, to prevent OOM errors, I sampled 256 hits. This can make the process slightly non-deterministic.
-Quantum efficiency
+
+### Quantum efficiency
+
 QE is the quantum efficiency of the photomutipliers in the DOMs. The DeepCore DOMs are quoted to have 35% higher QE than the regular DOMs (Figure 1 of this [paper](https://arxiv.org/pdf/2209.03042.pdf)), so QE was set to 1 everywhere, and 1.35 for the lower 50 DOMs in DeepCore. The final QE feature was scaled using (QE - 1.25) / 0.25.
-Scattering length
+
+### Scattering length
+
 Scattering and absorption lengths are important to characterise differences in the clarity of the ice. This data is published on page 31 of this [paper](https://arxiv.org/abs/1301.5361). A datum depth of 1920 metres was used so that z = (depth - 1920) / 500. The data was resampled to the z values using `scipy.interpolate.interp1d`. I found that after passing the data though `RobustScaler`, the scattering and absorption data was near identical, so I only used scattering length.
-Previous hit features
+
+### Previous hit features
+
 The two main types of events are track and cascade events. Looking at some of the amazing [visualisation tools](https://www.kaggle.com/competitions/icecube-neutrinos-in-deep-ice/discussion/388858) for example from edguy99, I got the idea that if a node had some understanding where and when the nearest previous hit was, it might help the model differentiate between these two groups. To calculate this for each event, sorted the hits by time, calculated the pairwise distances of all hits, masked any hits from the future and calculated the distance, d, to the nearest previous hit. This was scaled using (d - 0.5) / 0.5. The time delta from the previous hit was also calculated using the same method and scaled using (t - 0.1) / 0.1.
-Scattering flag
+
+### Scattering flag
+
 I tried to create a flag that could discern whether a hit was caused directly from a track, or some secondary scattering, inspired by section 2.1 of this [paper](https://arxiv.org/pdf/2203.02303.pdf). A side effect of adding this flag was that training was much more stable. The flag is generated as follows:
 Identify the hit with the largest charge
 From this DOM location, calculate the distances & time delta to every other hit
