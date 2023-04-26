@@ -43,7 +43,7 @@ configs = SimpleNamespace(
 # Training
 valid_dataset = [1,2,3]
 validation_files_amount = len(valid_dataset)
-batch_size = 2048               # for A5000: 2048
+batch_size = 2048              
 verbose = 0
 n_files = 50
 batch_file_len = 200_000
@@ -310,7 +310,6 @@ def create_model(args):
         model.summary()
 
         return model
-
 
 
 
