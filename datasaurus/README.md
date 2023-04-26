@@ -1,8 +1,8 @@
 # IceCube - Neutrinos in deep ice
 
-Part of the 5th place solution code for the IceCube - Neutrinos in deep ice competition hosted on Kaggle (April 2023) https://www.kaggle.com/competitions/icecube-neutrinos-in-deep-ice
+Part of the 8th place solution code for the IceCube - Neutrinos in deep ice competition hosted on Kaggle (April 2023) https://www.kaggle.com/competitions/icecube-neutrinos-in-deep-ice
 
-The writeup can be found here: TBC
+The writeup can be found here: https://www.kaggle.com/competitions/icecube-neutrinos-in-deep-ice/discussion/403713
 
 # Setup
 
@@ -20,7 +20,7 @@ This will create one `.pt` file for every event. This requires about 1 TB of dis
 To train a single model using a config listed in `conf/model` run:
 
 ```
-python train.py model=<model_name>  # defualt model is GraphNet/DynEdge
+python train.py model=<model_name>  # default model is GraphNet/DynEdge
 ```
 
 To run the 3 models used for my part of the submission (DynEdge, GPS & GravNet) use the shell script `train.sh`
