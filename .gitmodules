@@ -1,0 +1,3 @@
+[submodule "isamu/src/graphnet"]
+	path = isamu/src/graphnet
+	url = git@github.com:yamsam/graphnet.git
